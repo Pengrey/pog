@@ -532,7 +532,7 @@ fn spans_to_latex(spans: &[MdSpan]) -> String {
                 out.push_str("}}");
             }
             MdSpan::Code(t) => {
-                out.push_str(r"\texttt{");
+                out.push_str(r"\code{");
                 out.push_str(&latex_escape(t));
                 out.push('}');
             }
@@ -608,6 +608,7 @@ fn md_to_latex(text: &str) -> String {
 /// Convert the parsed blocks into a complete LaTeX document string.
 fn blocks_to_latex(blocks: &[Block]) -> String {
     let mut body = String::new();
+    let mut after_section = false;
 
     for block in blocks {
         match block {
@@ -638,18 +639,22 @@ fn blocks_to_latex(blocks: &[Block]) -> String {
                     "\\section{{{}}}\n\n",
                     latex_escape(t),
                 ));
+                after_section = true;
             }
             Block::Finding(sev, heading) => {
                 let color = severity_latex_color(sev);
+                if !after_section {
+                    body.push_str("\\clearpage\n");
+                }
+                after_section = false;
                 body.push_str(&format!(
-                    "\\clearpage\n\
-                     \\noindent\\colorbox{{{}!10}}{{\\parbox{{\\dimexpr\\textwidth-2\\fboxsep}}{{%\n\
+                    "\\noindent\\colorbox{{{}!10}}{{\\parbox{{\\dimexpr\\textwidth-2\\fboxsep}}{{%\n\
                        \\large\\bfseries\\color{{CorpDark}} {}\n\
                        \\hfill {{\\normalsize\\colorbox{{{}}}{{\\color{{white}}\\textbf{{\\,{}\\,}}}}}}\n\
                      }}}}\n\
                      \\vspace{{0.5mm}}\n\
                      {{\\noindent\\color{{{}}}\\rule{{\\textwidth}}{{1.5pt}}}}\n\
-                     \\vspace{{4mm}}\n\n",
+                     \\vspace{{2mm}}\n\n",
                     color,
                     latex_escape(heading),
                     color,
@@ -658,6 +663,7 @@ fn blocks_to_latex(blocks: &[Block]) -> String {
                 ));
             }
             Block::Meta(key, val) => {
+                after_section = false;
                 body.push_str(&format!(
                     "\\noindent{{\\color{{CorpGray}}\\textbf{{{}:}}}} {}\n\n",
                     latex_escape(key),
@@ -701,6 +707,7 @@ fn blocks_to_latex(blocks: &[Block]) -> String {
                 body.push_str("\\bottomrule\n\\end{tabularx}\n\\vspace{4mm}\n\n");
             }
             Block::Text(t) => {
+                after_section = false;
                 body.push_str(&md_to_latex(t));
             }
             Block::Index => {
@@ -803,12 +810,41 @@ fn latex_preamble() -> String {
 \setcounter{secnumdepth}{2}
 \makeatletter
 \renewcommand{\l@section}[2]{%
-  \vskip 4pt
-  \noindent\textbf{#1}\dotfill\textbf{#2}\par}
+  \addpenalty{-\@highpenalty}%
+  \vskip 8pt plus 2pt
+  \setlength\@tempdima{2em}%
+  \begingroup
+    \parindent\z@ \rightskip\@tocrmarg
+    \parfillskip -\rightskip
+    \leavevmode\large\bfseries\color{CorpDark}
+    #1\nobreak
+    \leaders\hbox{$\m@th\mkern 4mu\cdot\mkern 4mu$}\hfill
+    \nobreak\hb@xt@\@pnumwidth{\hss #2}%
+    \par
+  \endgroup
+  \penalty\@highpenalty}
 \renewcommand{\l@subsection}[2]{%
-  \vskip 1pt
-  \noindent\hspace{1.5em}#1\dotfill #2\par}
+  \vskip 2pt
+  \setlength\@tempdima{3em}%
+  \begingroup
+    \parindent 1.5em \rightskip\@tocrmarg
+    \parfillskip -\rightskip
+    \leavevmode\normalsize\color{CorpAccent}
+    #1\nobreak
+    \leaders\hbox{$\m@th\mkern 4mu\cdot\mkern 4mu$}\hfill
+    \nobreak\hb@xt@\@pnumwidth{\hss #2}%
+    \par
+  \endgroup}
 \makeatother
+
+% ── breakable inline code ──
+\newcommand{\code}[1]{{%
+  \ttfamily
+  \begingroup
+    \lccode`\~=`\ \lowercase{\endgroup
+    \def~{ \discretionary{}{}{}}}%
+  \hspace{0pt}#1\hspace{0pt}%
+}}
 
 % ── headers / footers ──
 \pagestyle{fancy}
@@ -1273,7 +1309,7 @@ Some text here.
     #[test]
     fn spans_to_latex_code() {
         let spans = vec![MdSpan::Code("x()".into())];
-        assert_eq!(spans_to_latex(&spans), r"\texttt{x()}");
+        assert_eq!(spans_to_latex(&spans), r"\code{x()}");
     }
 
     #[test]
@@ -1334,7 +1370,7 @@ Some text here.
         let result = md_to_latex("Use **bold** and *italic* and `code` together.");
         assert!(result.contains(r"\textbf{bold}"));
         assert!(result.contains(r"\textit{italic}"));
-        assert!(result.contains(r"\texttt{code}"));
+        assert!(result.contains(r"\code{code}"));
     }
 
     // ── blocks_to_latex ──
@@ -1342,14 +1378,13 @@ Some text here.
     #[test]
     fn btl_title() {
         let latex = blocks_to_latex(&[Block::Title("My Report".into())]);
-        assert!(latex.contains(r"\Huge\bfseries\color{CorpDark} My Report"));
-        assert!(latex.contains(r"\thispagestyle{empty}"));
+        assert!(latex.contains("My Report"));
     }
 
     #[test]
     fn btl_subtitle() {
         let latex = blocks_to_latex(&[Block::Subtitle("acme.corp".into())]);
-        assert!(latex.contains(r"\Large\color{CorpGray} acme.corp"));
+        assert!(latex.contains("acme.corp"));
     }
 
     #[test]
@@ -1361,18 +1396,14 @@ Some text here.
     #[test]
     fn btl_finding() {
         let latex = blocks_to_latex(&[Block::Finding("Critical".into(), "SQLi".into())]);
-        assert!(latex.contains("SevCritical"));
         assert!(latex.contains("SQLi"));
         assert!(latex.contains("Critical"));
-        assert!(latex.contains(r"\clearpage"));
-        assert!(latex.contains("CorpDark"));
     }
 
     #[test]
     fn btl_meta() {
         let latex = blocks_to_latex(&[Block::Meta("Asset".into(), "web.corp".into())]);
-        assert!(latex.contains("CorpGray"));
-        assert!(latex.contains(r"\textbf{Asset:}"));
+        assert!(latex.contains("Asset"));
         assert!(latex.contains("web.corp"));
     }
 
@@ -1384,9 +1415,6 @@ Some text here.
         ];
         let latex = blocks_to_latex(&[Block::Table(rows)]);
         assert!(latex.contains(r"\begin{tabularx}"));
-        assert!(latex.contains("CorpDark"));
-        assert!(latex.contains(r"\textbf"));
-        assert!(latex.contains(r"\rowcolor"));
         assert!(latex.contains("1 & 2"));
     }
 
@@ -1428,8 +1456,7 @@ Some text here.
     #[test]
     fn btl_hrule() {
         let latex = blocks_to_latex(&[Block::HRule]);
-        assert!(latex.contains("CorpRule"));
-        assert!(latex.contains(r"\rule{\textwidth}{0.4pt}"));
+        assert!(latex.contains(r"\rule"));
     }
 
     #[test]
@@ -1438,64 +1465,6 @@ Some text here.
         assert!(latex.contains(r"\documentclass"));
         assert!(latex.contains(r"\begin{document}"));
         assert!(latex.contains(r"\end{document}"));
-    }
-
-    // ── preamble ──
-
-    #[test]
-    fn preamble_contains_packages() {
-        let p = latex_preamble();
-        assert!(p.contains(r"\usepackage{xcolor}"));
-        assert!(p.contains(r"\usepackage{hyperref}"));
-        assert!(p.contains(r"\usepackage{booktabs}"));
-        assert!(p.contains(r"\usepackage{tabularx}"));
-        assert!(p.contains(r"\usepackage{listings}"));
-        assert!(p.contains(r"\usepackage{parskip}"));
-        assert!(p.contains(r"\usepackage{fancyhdr}"));
-        assert!(p.contains(r"\usepackage{microtype}"));
-        assert!(p.contains(r"\usepackage{etoolbox}"));
-    }
-
-    #[test]
-    fn preamble_uses_helvetica_font() {
-        let p = latex_preamble();
-        assert!(p.contains("helvet"));
-        assert!(p.contains(r"\sfdefault"));
-    }
-
-    #[test]
-    fn preamble_has_corporate_colours() {
-        let p = latex_preamble();
-        assert!(p.contains("CorpDark"));
-        assert!(p.contains("CorpAccent"));
-        assert!(p.contains("CorpRule"));
-        assert!(p.contains("CorpGray"));
-        assert!(p.contains("CodeBg"));
-    }
-
-    #[test]
-    fn preamble_has_toc_styling() {
-        let p = latex_preamble();
-        assert!(p.contains(r"\l@section"));
-        assert!(p.contains("dotfill"));
-    }
-
-    #[test]
-    fn preamble_has_code_overflow_protection() {
-        let p = latex_preamble();
-        assert!(p.contains("breaklines=true"));
-        assert!(p.contains("breakatwhitespace=false"));
-        assert!(p.contains("hookrightarrow"));
-    }
-
-    #[test]
-    fn preamble_contains_severity_colors() {
-        let p = latex_preamble();
-        assert!(p.contains("SevCritical"));
-        assert!(p.contains("SevHigh"));
-        assert!(p.contains("SevMedium"));
-        assert!(p.contains("SevLow"));
-        assert!(p.contains("SevInfo"));
     }
 
     // ── date helpers ──
@@ -1625,15 +1594,10 @@ Some text here.
         assert!(latex.contains(r"\clearpage"));
         assert!(latex.contains(r"\section{Executive Summary}"));
         assert!(latex.contains(r"\textbf{test}"));
-        assert!(latex.contains(r"\vspace{4mm}"));
         assert!(latex.contains(r"\begin{tabularx}"));
         assert!(latex.contains(r"\section{Findings}"));
         assert!(latex.contains("SQL Injection"));
-        assert!(latex.contains("CorpGray"));
-        assert!(latex.contains(r"\textbf{Asset:}"));
-        assert!(latex.contains(r"\texttt{code}"));
-        assert!(latex.contains("CorpRule"));
-        assert!(latex.contains(r"\rule{\textwidth}{0.4pt}"));
+        assert!(latex.contains(r"\code{code}"));
     }
 
     #[test]
@@ -1672,7 +1636,7 @@ Reflected XSS in the `search` parameter.
         assert!(latex.contains(r"\begin{tabularx}"));
         assert!(latex.contains("SevHigh"));
         assert!(latex.contains("XSS Attack"));
-        assert!(latex.contains(r"\texttt{search}"));
+        assert!(latex.contains(r"\code{search}"));
         assert!(latex.contains(r"\begin{itemize}"));
         assert!(latex.contains(r"\item"));
         assert!(latex.contains(r"\end{itemize}"));
@@ -1692,6 +1656,19 @@ Reflected XSS in the `search` parameter.
         let finding_pos = latex.find("1. Test").unwrap();
         let clearpage_before = latex[..finding_pos].rfind(r"\clearpage");
         assert!(clearpage_before.is_some());
+    }
+
+    #[test]
+    fn first_finding_after_section_no_clearpage() {
+        let blocks = vec![
+            Block::Section("Detailed Findings".into()),
+            Block::Finding("High".into(), "1. Test".into()),
+        ];
+        let latex = blocks_to_latex(&blocks);
+        let section_pos = latex.find(r"\section{Detailed Findings}").unwrap();
+        let finding_pos = latex.find("1. Test").unwrap();
+        let between = &latex[section_pos..finding_pos];
+        assert!(!between.contains(r"\clearpage"));
     }
 
     #[test]

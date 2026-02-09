@@ -74,8 +74,8 @@ make release
 # Import a single finding
 pog import -p ./sql-injection
 
-# Bulk-import a directory of findings
-pog import -p ./pentest-findings --bulk
+# Bulk-import the example findings
+pog import -p ./examples/findings_example --bulk
 
 # Open the TUI dashboard
 pog view
@@ -84,7 +84,8 @@ pog view
 pog export -o findings.csv
 
 # Generate a PDF report
-pog report -t template.tmpl -o report.pdf --asset nexus_portal --from 2025/09/01 --to 2026/01/31
+pog report -t examples/report_template_example/template.tmpl \
+           --asset nexus_portal --from 2025/09/01 --to 2026/01/31
 
 # Wipe the database and all stored findings
 pog clean
@@ -273,7 +274,8 @@ Finding descriptions (and any plain text) support Markdown formatting:
 #! pagebreak
 
 {# Auto-generated table of contents #}
-#! section Table of Contents
+#! subtitle Table of Contents
+#! spacer 4
 #! index
 #! pagebreak
 
@@ -294,14 +296,12 @@ Info | {{ info }} | Informational / best practice
 {# Loop over findings — each starts on its own page #}
 {% for f in findings %}
 #! finding {{ f.severity }} {{ f.num }}. {{ f.title }}
-#! meta Severity: {{ f.severity }}
 #! meta Location: {{ f.location }}
-#! spacer 2
 {{ f.description }}
 {% endfor %}
 ```
 
-See `test/report_template/template.tmpl` for a complete working template.
+See [`examples/report_template_example/template.tmpl`](examples/report_template_example/template.tmpl) for a complete working template.
 
 ## Finding format
 
@@ -439,9 +439,9 @@ pog/
 ├── models/                 # domain types – Finding, Severity, GraphData
 ├── storage/                # POGDIR layout, SQLite, import & report logic
 ├── tui/                    # ratatui-based terminal UI (tabs: Graph, Search)
-├── test/
-│   ├── findings/           # sample finding folders for testing
-│   └── report_template/    # MiniJinja report template (.tmpl)
+├── examples/
+│   ├── findings_example/           # sample finding folders
+│   └── report_template_example/    # MiniJinja report template (.tmpl)
 ├── Makefile
 └── Cargo.toml              # workspace root
 ```
