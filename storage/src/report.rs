@@ -654,7 +654,8 @@ fn blocks_to_latex(blocks: &[Block]) -> String {
                      }}}}\n\
                      \\vspace{{0.5mm}}\n\
                      {{\\noindent\\color{{{}}}\\rule{{\\textwidth}}{{1.5pt}}}}\n\
-                     \\vspace{{2mm}}\n\n",
+                     \\nopagebreak\n\
+                     \\vspace{{1mm}}\n\n",
                     color,
                     latex_escape(heading),
                     color,
@@ -665,7 +666,7 @@ fn blocks_to_latex(blocks: &[Block]) -> String {
             Block::Meta(key, val) => {
                 after_section = false;
                 body.push_str(&format!(
-                    "\\noindent{{\\color{{CorpGray}}\\textbf{{{}:}}}} {}\n\n",
+                    "\\noindent{{\\color{{CorpGray}}\\textbf{{{}:}}}} {}\\par\\vspace{{-0.3\\parskip}}\n",
                     latex_escape(key),
                     latex_escape(val),
                 ));
@@ -838,13 +839,14 @@ fn latex_preamble() -> String {
 \makeatother
 
 % ── breakable inline code ──
+\makeatletter
 \newcommand{\code}[1]{{%
-  \ttfamily
-  \begingroup
-    \lccode`\~=`\ \lowercase{\endgroup
-    \def~{ \discretionary{}{}{}}}%
-  \hspace{0pt}#1\hspace{0pt}%
+  \ttfamily\hyphenpenalty=10000\exhyphenpenalty=10000
+  \@code@loop#1\@nil
 }}
+\def\@code@loop{\@ifnextchar\@nil{\@gobble}{\@code@char}}
+\def\@code@char#1{#1\discretionary{}{}{}\@code@loop}
+\makeatother
 
 % ── headers / footers ──
 \pagestyle{fancy}
