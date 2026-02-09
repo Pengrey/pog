@@ -4,7 +4,6 @@ use ratatui::{layout::Rect, Frame};
 
 use crate::tabs::Tab;
 use crate::tabs::graph::GraphTab;
-use crate::tabs::placeholder::PlaceholderTab;
 use crate::tabs::search::SearchTab;
 
 /// Top-level application state — owns all tabs and routes input/rendering.
@@ -18,7 +17,6 @@ impl App {
         let tabs: Vec<Box<dyn Tab>> = vec![
             Box::new(GraphTab::new(graph_data, findings.clone())),
             Box::new(SearchTab::new(findings)),
-            Box::new(PlaceholderTab::new()),
         ];
         Self { tabs, current: 0 }
     }

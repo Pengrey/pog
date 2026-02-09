@@ -26,15 +26,27 @@ pub enum Commands {
     /// View all findings through a TUI
     View {},
 
-    /// Generate a report from the findings
+    /// Generate a PDF report from findings
     Report {
-        /// the template to use for the report
-        #[arg(short, long, required = true)]
+        /// Report template file (.tmpl)
+        #[arg(short, long)]
         template: String,
 
-        /// the path to the output file
-        #[arg(short, long)]
+        /// Path to the output PDF file
+        #[arg(short, long, default_value = "report.pdf")]
         output: String,
+
+        /// Asset name to report on
+        #[arg(short, long)]
+        asset: String,
+
+        /// Start date for the date range (YYYY/MM/DD)
+        #[arg(long)]
+        from: String,
+
+        /// End date for the date range (YYYY/MM/DD)
+        #[arg(long)]
+        to: String,
     },
 
     /// Wipe the database and all stored findings

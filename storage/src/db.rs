@@ -192,6 +192,69 @@ impl Database {
         Ok(findings)
     }
 
+    /// Load findings filtered by optional asset and date range.
+    pub fn findings_filtered(
+        &self,
+        asset: Option<&str>,
+        from: Option<&str>,
+        to: Option<&str>,
+    ) -> Result<Vec<Finding>> {
+        let mut sql = String::from(
+            "SELECT id, title, severity, asset, date, location, description, status
+             FROM findings WHERE 1=1"
+        );
+        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+        if let Some(a) = asset {
+            sql.push_str(" AND asset = ?");
+            params_vec.push(Box::new(a.to_string()));
+        }
+        if let Some(f) = from {
+            sql.push_str(" AND date >= ?");
+            params_vec.push(Box::new(f.to_string()));
+        }
+        if let Some(t) = to {
+            sql.push_str(" AND date <= ?");
+            params_vec.push(Box::new(t.to_string()));
+        }
+        sql.push_str(" ORDER BY date, asset, title");
+
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params_refs.as_slice(), |row| {
+            Ok(FindingRow {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                severity: row.get(2)?,
+                asset: row.get(3)?,
+                date: row.get(4)?,
+                location: row.get(5)?,
+                description: row.get(6)?,
+                status: row.get(7)?,
+            })
+        })?;
+
+        let mut findings = Vec::new();
+        for row in rows {
+            let r = row?;
+            let images = self.images_for(r.id)?;
+            let severity: Severity = r.severity.parse().unwrap_or(Severity::Info);
+            let status: Status = r.status.parse().unwrap_or(Status::Open);
+            findings.push(Finding {
+                id: Some(r.id),
+                title: r.title,
+                severity,
+                asset: r.asset,
+                date: r.date,
+                location: r.location,
+                description: r.description,
+                status,
+                images,
+            });
+        }
+        Ok(findings)
+    }
+
     /// Count findings grouped by severity.
     pub fn severity_counts(&self) -> Result<Vec<(String, u64)>> {
         let mut stmt = self.conn.prepare(

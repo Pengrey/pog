@@ -15,6 +15,7 @@ browse the file tree directly with `find`, `grep`, `cat`, `tree`, etc.
 - **Interactive TUI** – tabbed dashboard with keyboard & mouse support.
   - **Graph** – severity distribution bars + a line chart of findings over time (Braille markers), with per-severity toggle filters.
   - **Search** – full-text search across all findings with severity, asset, status and date filters, plus a detail panel.
+- **PDF reports** – generate professional template-driven PDF reports scoped by asset and date range. No external dependencies required.
 - **CSV export** – one-command export of the entire database.
 - **Bulk import** – import an entire directory of finding folders at once.
 - **Zero config** – runs out of the box; data lives in `~/.pog` (or `$POGDIR`).
@@ -39,6 +40,9 @@ pog view
 
 # Export everything to CSV
 pog export -o findings.csv
+
+# Generate a PDF report
+pog report -t template.tmpl -o report.pdf --asset nexus_portal --from 2025/09/01 --to 2026/01/31
 
 # Wipe the database and all stored findings
 pog clean
@@ -72,9 +76,9 @@ $ pog import -p ./sql-injection
 
 $ pog import -p ./findings --bulk
 [+] Imported 3 finding(s)
-[*]   SQL Injection [Critical] (nexus_portal)
-[*]   Open Redirect [Medium] (nexus_portal)
-[*]   Weak TLS [Low] (orion_gateway)
+[*] SQL Injection [Critical] (nexus_portal)
+[*] Open Redirect [Medium] (nexus_portal)
+[*] Weak TLS [Low] (orion_gateway)
 ```
 
 ### `pog view`
@@ -126,13 +130,138 @@ $ pog clean
 
 ### `pog report`
 
-*(Planned)* Generate a report from the stored findings.
+Generate a PDF report from findings. The report is driven by a
+[MiniJinja](https://docs.rs/minijinja) template (Jinja2-compatible) that
+uses `#!` directives to describe the PDF structure.
+
+All flags are required:
 
 ```
-pog report -t template.md -o report.pdf
+pog report -t template.tmpl --asset nexus_portal --from 2025/09/01 --to 2026/01/31
+pog report -t template.tmpl -o report.pdf --asset nexus_portal --from 2025/09/01 --to 2026/01/31
 ```
 
----
+| Flag        | Description                                      | Default         |
+|-------------|--------------------------------------------------|-----------------|
+| `-t`        | Report template file (`.tmpl`)                   | *(required)*    |
+| `-o`        | Output PDF path                                  | `report.pdf`    |
+| `--asset`   | Asset name to report on                          | *(required)*    |
+| `--from`    | Start date (`YYYY/MM/DD`)                        | *(required)*    |
+| `--to`      | End date (`YYYY/MM/DD`)                          | *(required)*    |
+
+#### Template directives
+
+Templates are plain text files processed by MiniJinja, then parsed by
+`pog` via `#!` directives.  Plain text between directives is rendered as
+**Markdown** — bold, italic, inline code, fenced code blocks, headings,
+bullet lists, and `[text](url)` links are all supported natively.
+
+| Directive | Description |
+|-----------|-------------|
+| `#! title <text>` | Large title with accent bar |
+| `#! subtitle <text>` | Smaller gray subtitle |
+| `#! section <text>` | Section heading with accent underline |
+| `#! finding <severity> <text>` | Finding card — auto page-break between findings |
+| `#! meta <key>: <value>` | Key–value metadata line |
+| `#! table` | Table from following `\|`-delimited lines (first row = header) |
+| `#! index` | Auto-generated TOC with dot leaders, page numbers & PDF bookmarks |
+| `#! spacer <mm>` | Explicit vertical spacing in millimetres |
+| `#! comment <text>` | Template-only note (not rendered in PDF) |
+| `#! image <path>` | *(reserved)* Image / logo placeholder |
+| `#! pagebreak` | Force a new page |
+| `#! hr` | Horizontal rule |
+
+#### Markdown in descriptions
+
+Finding descriptions (and any plain text) support Markdown formatting:
+
+| Syntax | Rendered as |
+|--------|-------------|
+| `**bold**` | **Bold** text |
+| `*italic*` | *Italic* text |
+| `***bold italic***` | ***Bold italic*** text |
+| `` `code` `` | Inline code with background |
+| ` ```…``` ` | Fenced code block with accent bar |
+| `[text](url)` | Clickable link (underlined, blue) |
+| `# Heading` | Heading (levels 1–3) |
+| `- item` | Bullet list item |
+
+#### Template variables
+
+| Variable      | Type   | Description                              |
+|---------------|--------|------------------------------------------|
+| `findings`    | list   | Array of finding objects (see below)     |
+| `date`        | string | Report generation date (`YYYY/MM/DD`)    |
+| `asset`       | string | Asset name                               |
+| `from`        | string | Start date                               |
+| `to`          | string | End date                                 |
+| `total`       | int    | Total finding count                      |
+| `critical`    | int    | Critical count                           |
+| `high`        | int    | High count                               |
+| `medium`      | int    | Medium count                             |
+| `low`         | int    | Low count                                |
+| `info`        | int    | Info count                               |
+
+**Each finding object:**
+
+| Field            | Description                                   |
+|------------------|-----------------------------------------------|
+| `num`            | 1-based index                                 |
+| `title`          | Finding title                                 |
+| `severity`       | `Critical`, `High`, `Medium`, `Low`, `Info`   |
+| `asset`          | Target asset                                  |
+| `date`           | Finding date                                  |
+| `location`       | URL or path                                   |
+| `description`    | Full description text                         |
+| `status`         | `Open`, `In Progress`, `Resolved`, …          |
+
+#### Example snippets
+
+```
+{# Cover page with logo placeholder #}
+#! title Security Assessment Report
+#! comment TODO: Add company logo here once image support is implemented
+#! comment       #! image ./assets/company_logo.png
+#! subtitle {{ asset }}
+#! spacer 8
+#! meta Prepared for: {{ asset }}
+#! meta Assessment Period: {{ from }} – {{ to }}
+#! meta Report Generated: {{ date }}
+#! meta Classification: Confidential
+#! pagebreak
+
+{# Auto-generated table of contents #}
+#! section Table of Contents
+#! index
+#! pagebreak
+
+{# Conditional content #}
+{% if critical > 0 %}
+ATTENTION: {{ critical }} critical finding(s) require immediate remediation.
+{% endif %}
+
+{# Severity summary table with risk levels #}
+#! table
+Severity | Count | Risk Level
+Critical | {{ critical }} | Immediate remediation required
+High | {{ high }} | Short-term remediation recommended
+Medium | {{ medium }} | Planned remediation advised
+Low | {{ low }} | Address during regular maintenance
+Info | {{ info }} | Informational / best practice
+
+{# Loop over findings — each starts on its own page #}
+{% for f in findings %}
+#! finding {{ f.severity }} {{ f.num }}. {{ f.title }}
+#! meta Severity: {{ f.severity }}
+#! meta Asset: {{ f.asset }}
+#! meta Location: {{ f.location }}
+#! meta Status: {{ f.status }}
+#! spacer 2
+{{ f.description }}
+{% endfor %}
+```
+
+See `test/report_template/template.tmpl` for a complete working template.
 
 ## Finding format
 
@@ -243,8 +372,6 @@ find ~/.pog/findings/ -name "img" -type d
 
 ## Building
 
-Requires **Rust 2024 edition** (rustc ≥ 1.85).
-
 ```bash
 # Release build (recommended)
 make release
@@ -267,13 +394,16 @@ cargo test --workspace
 
 ```
 pog/
-├── src/          # binary entry point
-├── cli/          # CLI argument parsing (clap)
-├── models/       # domain types – Finding, Severity, GraphData
-├── storage/      # POGDIR layout, SQLite, import logic
-├── tui/          # ratatui-based terminal UI (tabs: Graph, Search)
+├── src/                    # binary entry point
+├── cli/                    # CLI argument parsing (clap)
+├── models/                 # domain types – Finding, Severity, GraphData
+├── storage/                # POGDIR layout, SQLite, import & report logic
+├── tui/                    # ratatui-based terminal UI (tabs: Graph, Search)
+├── test/
+│   ├── findings/           # sample finding folders for testing
+│   └── report_template/    # MiniJinja report template (.tmpl)
 ├── Makefile
-└── Cargo.toml    # workspace root
+└── Cargo.toml              # workspace root
 ```
 
 ---

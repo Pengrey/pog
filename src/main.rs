@@ -55,11 +55,34 @@ fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
             tui::run_with_data(graph_data, display_findings)?;
         }
 
-        Commands::Report { output, template } => {
+        Commands::Report { output, template, asset, from, to } => {
+            let db = pog.open_db()?;
+            let findings = db.findings_filtered(
+                Some(asset.as_str()),
+                Some(from.as_str()),
+                Some(to.as_str()),
+            )?;
+
+            if findings.is_empty() {
+                error!("No findings match the given filters");
+                process::exit(1);
+            }
+
             info!(
-                "Generating report with template: {} and output: {}",
-                template, output
+                "Generating report for {} finding(s)…",
+                findings.len()
             );
+
+            storage::generate_report(
+                Path::new(&template),
+                Path::new(&output),
+                &findings,
+                &asset,
+                &from,
+                &to,
+            )?;
+
+            success!("Report written to {}", output);
         }
 
         Commands::Clean {} => {

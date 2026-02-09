@@ -1,5 +1,4 @@
 pub mod graph;
-pub mod placeholder;
 pub mod search;
 
 use crossterm::event::KeyCode;
