@@ -3,6 +3,11 @@ name = "pog"
 version = "0.1.0"
 edition = "2024"
 
+[workspace]
+members = ["cli", "models", "storage", "tui"]
+
 [dependencies]
 cli = { path = "cli" }
+models = { path = "models" }
+storage = { path = "storage" }
 tui = { path = "tui" }

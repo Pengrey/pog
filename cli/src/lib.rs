@@ -12,11 +12,15 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Import a finding from a folder
+    /// Import finding(s) from a folder
     Import {
-        /// the path to the folder containing the finding
+        /// Path to the finding folder (or parent folder when using --bulk)
         #[arg(short, long)]
         path: String,
+
+        /// Treat <path> as a directory of finding folders and import them all
+        #[arg(short, long, default_value_t = false)]
+        bulk: bool,
     },
 
     /// View all findings through a TUI
@@ -30,6 +34,16 @@ pub enum Commands {
 
         /// the path to the output file
         #[arg(short, long)]
+        output: String,
+    },
+
+    /// Wipe the database and all stored findings
+    Clean {},
+
+    /// Export all findings to CSV
+    Export {
+        /// Path to the output CSV file
+        #[arg(short, long, default_value = "findings.csv")]
         output: String,
     },
 }

@@ -6,6 +6,8 @@ use ratatui::{
     Frame,
 };
 
+use super::Tab;
+
 pub struct PlaceholderTab {
     click_count: u32,
     last_click: Option<(u16, u16)>,
@@ -21,16 +23,24 @@ impl PlaceholderTab {
         }
     }
 
-    pub fn handle_click(&mut self, col: u16, row: u16) {
-        if let Some(area) = self.area {
-            if col >= area.x && col < area.x + area.width && row >= area.y && row < area.y + area.height {
-                self.click_count += 1;
-                self.last_click = Some((col, row));
-            }
+    fn in_area(&self, col: u16, row: u16) -> bool {
+        self.area.is_some_and(|a| {
+            col >= a.x && col < a.x + a.width && row >= a.y && row < a.y + a.height
+        })
+    }
+}
+
+impl Tab for PlaceholderTab {
+    fn title(&self) -> &'static str { "Placeholder" }
+
+    fn handle_click(&mut self, col: u16, row: u16) {
+        if self.in_area(col, row) {
+            self.click_count += 1;
+            self.last_click = Some((col, row));
         }
     }
 
-    pub fn render(&mut self, f: &mut Frame, area: Rect) {
+    fn render(&mut self, f: &mut Frame, area: Rect) {
         self.area = Some(area);
 
         let click_info = if let Some((x, y)) = self.last_click {

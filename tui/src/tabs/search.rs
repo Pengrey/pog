@@ -7,77 +7,109 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{Finding, Severity};
+use models::{Finding, Severity};
+
+use super::Tab;
+
+// ---------------------------------------------------------------------------
+// Severity filter (wraps the domain `Severity` with an extra "All" option)
+// ---------------------------------------------------------------------------
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum SeverityFilter {
     All,
-    Critical,
-    High,
-    Medium,
-    Low,
-    Info,
+    Only(Severity),
 }
 
 impl SeverityFilter {
-    pub fn all_options() -> Vec<SeverityFilter> {
-        vec![
-            SeverityFilter::All,
-            SeverityFilter::Critical,
-            SeverityFilter::High,
-            SeverityFilter::Medium,
-            SeverityFilter::Low,
-            SeverityFilter::Info,
-        ]
-    }
+    pub const OPTIONS: &[SeverityFilter] = &[
+        SeverityFilter::All,
+        SeverityFilter::Only(Severity::Critical),
+        SeverityFilter::Only(Severity::High),
+        SeverityFilter::Only(Severity::Medium),
+        SeverityFilter::Only(Severity::Low),
+        SeverityFilter::Only(Severity::Info),
+    ];
 
     pub fn as_str(&self) -> &'static str {
         match self {
             SeverityFilter::All => "All",
-            SeverityFilter::Critical => "Critical",
-            SeverityFilter::High => "High",
-            SeverityFilter::Medium => "Medium",
-            SeverityFilter::Low => "Low",
-            SeverityFilter::Info => "Info",
+            SeverityFilter::Only(s) => s.as_str(),
         }
     }
 
     pub fn matches(&self, severity: Severity) -> bool {
         match self {
             SeverityFilter::All => true,
-            SeverityFilter::Critical => severity == Severity::Critical,
-            SeverityFilter::High => severity == Severity::High,
-            SeverityFilter::Medium => severity == Severity::Medium,
-            SeverityFilter::Low => severity == Severity::Low,
-            SeverityFilter::Info => severity == Severity::Info,
+            SeverityFilter::Only(s) => *s == severity,
         }
     }
 
     pub fn color(&self) -> Color {
         match self {
             SeverityFilter::All => Color::White,
-            SeverityFilter::Critical => Color::Red,
-            SeverityFilter::High => Color::LightRed,
-            SeverityFilter::Medium => Color::Yellow,
-            SeverityFilter::Low => Color::Green,
-            SeverityFilter::Info => Color::Blue,
+            SeverityFilter::Only(s) => s.color(),
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Asset filter
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, PartialEq)]
+pub enum AssetFilter {
+    All,
+    Only(String),
+}
+
+impl AssetFilter {
+    pub fn as_str(&self) -> &str {
+        match self {
+            AssetFilter::All => "All",
+            AssetFilter::Only(s) => s.as_str(),
+        }
+    }
+
+    pub fn matches(&self, asset: &str) -> bool {
+        match self {
+            AssetFilter::All => true,
+            AssetFilter::Only(s) => s == asset,
+        }
+    }
+
+    pub fn color(&self) -> Color {
+        match self {
+            AssetFilter::All => Color::White,
+            AssetFilter::Only(_) => Color::Cyan,
+        }
+    }
+}
+
 
 pub struct SearchTab {
     search_input: String,
     search_focused: bool,
     severity_filter: SeverityFilter,
-    dropdown_open: bool,
+    asset_filter: AssetFilter,
+    asset_options: Vec<AssetFilter>,
+    active_dropdown: ActiveDropdown,
     dropdown_selected: usize,
     items: Vec<Finding>,
     filtered_items: Vec<Finding>,
     list_state: ListState,
     search_area: Option<Rect>,
-    dropdown_button_area: Option<Rect>,
+    severity_button_area: Option<Rect>,
+    asset_button_area: Option<Rect>,
     dropdown_menu_area: Option<Rect>,
     list_area: Option<Rect>,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum ActiveDropdown {
+    None,
+    Severity,
+    Asset,
 }
 
 impl SearchTab {
@@ -88,75 +120,103 @@ impl SearchTab {
             list_state.select(Some(0));
         }
 
+        // Build unique sorted asset list
+        let mut assets: Vec<String> = items.iter().map(|f| f.asset.clone()).collect();
+        assets.sort();
+        assets.dedup();
+        let mut asset_options: Vec<AssetFilter> = vec![AssetFilter::All];
+        asset_options.extend(assets.into_iter().map(AssetFilter::Only));
+
         Self {
             search_input: String::new(),
             search_focused: false,
             severity_filter: SeverityFilter::All,
-            dropdown_open: false,
+            asset_filter: AssetFilter::All,
+            asset_options,
+            active_dropdown: ActiveDropdown::None,
             dropdown_selected: 0,
             items,
             filtered_items,
             list_state,
             search_area: None,
-            dropdown_button_area: None,
+            severity_button_area: None,
+            asset_button_area: None,
             dropdown_menu_area: None,
             list_area: None,
         }
     }
 
-    pub fn is_focused(&self) -> bool {
-        self.search_focused
-    }
-
-    pub fn is_dropdown_open(&self) -> bool {
-        self.dropdown_open
-    }
-
-    pub fn focus_search(&mut self) {
-        self.search_focused = true;
-        self.dropdown_open = false;
-    }
-
-    pub fn unfocus(&mut self) {
-        self.search_focused = false;
-        self.dropdown_open = false;
-    }
-
-    pub fn toggle_dropdown(&mut self) {
-        self.dropdown_open = !self.dropdown_open;
-        self.search_focused = false;
-        if self.dropdown_open {
-            self.dropdown_selected = SeverityFilter::all_options()
+    fn toggle_severity_dropdown(&mut self) {
+        if self.active_dropdown == ActiveDropdown::Severity {
+            self.active_dropdown = ActiveDropdown::None;
+        } else {
+            self.active_dropdown = ActiveDropdown::Severity;
+            self.search_focused = false;
+            self.dropdown_selected = SeverityFilter::OPTIONS
                 .iter()
-                .position(|&f| f == self.severity_filter)
+                .position(|f| *f == self.severity_filter)
                 .unwrap_or(0);
         }
     }
 
-    pub fn dropdown_next(&mut self) {
-        let options = SeverityFilter::all_options();
-        self.dropdown_selected = (self.dropdown_selected + 1) % options.len();
-    }
-
-    pub fn dropdown_previous(&mut self) {
-        let options = SeverityFilter::all_options();
-        self.dropdown_selected = if self.dropdown_selected == 0 {
-            options.len() - 1
+    fn toggle_asset_dropdown(&mut self) {
+        if self.active_dropdown == ActiveDropdown::Asset {
+            self.active_dropdown = ActiveDropdown::None;
         } else {
-            self.dropdown_selected - 1
-        };
-    }
-
-    pub fn dropdown_select(&mut self) {
-        let options = SeverityFilter::all_options();
-        if let Some(&filter) = options.get(self.dropdown_selected) {
-            self.severity_filter = filter;
-            self.dropdown_open = false;
-            self.filter_items();
+            self.active_dropdown = ActiveDropdown::Asset;
+            self.search_focused = false;
+            self.dropdown_selected = self.asset_options
+                .iter()
+                .position(|f| *f == self.asset_filter)
+                .unwrap_or(0);
         }
     }
 
-    pub fn filter_items(&mut self) {
+    fn dropdown_option_count(&self) -> usize {
+        match self.active_dropdown {
+            ActiveDropdown::Severity => SeverityFilter::OPTIONS.len(),
+            ActiveDropdown::Asset => self.asset_options.len(),
+            ActiveDropdown::None => 0,
+        }
+    }
+
+    fn dropdown_next(&mut self) {
+        let count = self.dropdown_option_count();
+        if count > 0 {
+            self.dropdown_selected = (self.dropdown_selected + 1) % count;
+        }
+    }
+
+    fn dropdown_previous(&mut self) {
+        let count = self.dropdown_option_count();
+        if count > 0 {
+            self.dropdown_selected = if self.dropdown_selected == 0 {
+                count - 1
+            } else {
+                self.dropdown_selected - 1
+            };
+        }
+    }
+
+    fn dropdown_select(&mut self) {
+        match self.active_dropdown {
+            ActiveDropdown::Severity => {
+                if let Some(&filter) = SeverityFilter::OPTIONS.get(self.dropdown_selected) {
+                    self.severity_filter = filter;
+                }
+            }
+            ActiveDropdown::Asset => {
+                if let Some(filter) = self.asset_options.get(self.dropdown_selected) {
+                    self.asset_filter = filter.clone();
+                }
+            }
+            ActiveDropdown::None => {}
+        }
+        self.active_dropdown = ActiveDropdown::None;
+        self.filter_items();
+    }
+
+    fn filter_items(&mut self) {
         let search_lower = self.search_input.to_lowercase();
         self.filtered_items = self.items
             .iter()
@@ -166,7 +226,8 @@ impl SearchTab {
                     || item.description.to_lowercase().contains(&search_lower)
                     || item.location.to_lowercase().contains(&search_lower);
                 let matches_severity = self.severity_filter.matches(item.severity);
-                matches_search && matches_severity
+                let matches_asset = self.asset_filter.matches(&item.asset);
+                matches_search && matches_severity && matches_asset
             })
             .cloned()
             .collect();
@@ -178,7 +239,7 @@ impl SearchTab {
         }
     }
 
-    pub fn list_next(&mut self) {
+    fn list_next(&mut self) {
         if self.filtered_items.is_empty() { return; }
         let i = match self.list_state.selected() {
             Some(i) => (i + 1) % self.filtered_items.len(),
@@ -187,7 +248,7 @@ impl SearchTab {
         self.list_state.select(Some(i));
     }
 
-    pub fn list_previous(&mut self) {
+    fn list_previous(&mut self) {
         if self.filtered_items.is_empty() { return; }
         let i = match self.list_state.selected() {
             Some(i) => if i == 0 { self.filtered_items.len() - 1 } else { i - 1 },
@@ -196,117 +257,127 @@ impl SearchTab {
         self.list_state.select(Some(i));
     }
 
-    pub fn get_selected(&self) -> Option<&Finding> {
+    fn get_selected(&self) -> Option<&Finding> {
         self.list_state.selected().and_then(|i| self.filtered_items.get(i))
-    }
-
-    pub fn handle_key(&mut self, key: KeyCode) -> bool {
-        if self.dropdown_open {
-            match key {
-                KeyCode::Esc => {
-                    self.dropdown_open = false;
-                    true
-                }
-                KeyCode::Enter => {
-                    self.dropdown_select();
-                    true
-                }
-                KeyCode::Down => {
-                    self.dropdown_next();
-                    true
-                }
-                KeyCode::Up => {
-                    self.dropdown_previous();
-                    true
-                }
-                _ => false,
-            }
-        } else if self.search_focused {
-            match key {
-                KeyCode::Esc | KeyCode::Enter => {
-                    self.search_focused = false;
-                    true
-                }
-                KeyCode::Char(c) => {
-                    self.search_input.push(c);
-                    self.filter_items();
-                    true
-                }
-                KeyCode::Backspace => {
-                    self.search_input.pop();
-                    self.filter_items();
-                    true
-                }
-                KeyCode::Down => {
-                    self.list_next();
-                    true
-                }
-                KeyCode::Up => {
-                    self.list_previous();
-                    true
-                }
-                _ => false,
-            }
-        } else {
-            false
-        }
-    }
-
-    pub fn handle_click(&mut self, col: u16, row: u16) {
-        if self.dropdown_open {
-            if let Some(area) = self.dropdown_menu_area {
-                if Self::in_area(col, row, area) {
-                    let menu_start_y = area.y + 1;
-                    if row >= menu_start_y {
-                        let clicked_index = (row - menu_start_y) as usize;
-                        let options = SeverityFilter::all_options();
-                        if clicked_index < options.len() {
-                            self.dropdown_selected = clicked_index;
-                            self.dropdown_select();
-                        }
-                    }
-                    return;
-                }
-            }
-            self.dropdown_open = false;
-        }
-
-        if let Some(area) = self.dropdown_button_area {
-            if Self::in_area(col, row, area) {
-                self.toggle_dropdown();
-                return;
-            }
-        }
-
-        if let Some(area) = self.search_area {
-            if Self::in_area(col, row, area) {
-                self.search_focused = true;
-                self.dropdown_open = false;
-                return;
-            }
-        }
-
-        if let Some(area) = self.list_area {
-            if Self::in_area(col, row, area) {
-                let list_start_y = area.y + 1;
-                if row >= list_start_y {
-                    let clicked_index = (row - list_start_y) as usize;
-                    if clicked_index < self.filtered_items.len() {
-                        self.list_state.select(Some(clicked_index));
-                    }
-                }
-                return;
-            }
-        }
-
-        self.search_focused = false;
     }
 
     fn in_area(col: u16, row: u16, area: Rect) -> bool {
         col >= area.x && col < area.x + area.width && row >= area.y && row < area.y + area.height
     }
+}
 
-    pub fn render(&mut self, f: &mut Frame, area: Rect) {
+// ---------------------------------------------------------------------------
+// Tab trait implementation
+// ---------------------------------------------------------------------------
+
+impl Tab for SearchTab {
+    fn title(&self) -> &'static str { "Search" }
+
+    fn on_blur(&mut self) {
+        self.search_focused = false;
+        self.active_dropdown = ActiveDropdown::None;
+    }
+
+    fn handle_key(&mut self, key: KeyCode) -> bool {
+        // --- dropdown is open: route keys to dropdown ---
+        if self.active_dropdown != ActiveDropdown::None {
+            return match key {
+                KeyCode::Esc => { self.active_dropdown = ActiveDropdown::None; true }
+                KeyCode::Enter => { self.dropdown_select(); true }
+                KeyCode::Down => { self.dropdown_next(); true }
+                KeyCode::Up => { self.dropdown_previous(); true }
+                _ => false,
+            };
+        }
+
+        // --- search box focused: route keys to text input ---
+        if self.search_focused {
+            return match key {
+                KeyCode::Esc | KeyCode::Enter => { self.search_focused = false; true }
+                KeyCode::Char(c) => { self.search_input.push(c); self.filter_items(); true }
+                KeyCode::Backspace => { self.search_input.pop(); self.filter_items(); true }
+                KeyCode::Down => { self.list_next(); true }
+                KeyCode::Up => { self.list_previous(); true }
+                _ => false,
+            };
+        }
+
+        // --- normal mode: tab-level shortcuts ---
+        match key {
+            KeyCode::Char('s') => { self.search_focused = true; self.active_dropdown = ActiveDropdown::None; true }
+            KeyCode::Char('f') => { self.toggle_severity_dropdown(); true }
+            KeyCode::Char('a') => { self.toggle_asset_dropdown(); true }
+            KeyCode::Down => { self.list_next(); true }
+            KeyCode::Up => { self.list_previous(); true }
+            _ => false,
+        }
+    }
+
+    fn handle_click(&mut self, col: u16, row: u16) {
+        if self.active_dropdown != ActiveDropdown::None {
+            if let Some(area) = self.dropdown_menu_area
+                && Self::in_area(col, row, area)
+            {
+                let menu_start_y = area.y + 1;
+                if row >= menu_start_y {
+                    let clicked_index = (row - menu_start_y) as usize;
+                    if clicked_index < self.dropdown_option_count() {
+                        self.dropdown_selected = clicked_index;
+                        self.dropdown_select();
+                    }
+                }
+                return;
+            }
+            self.active_dropdown = ActiveDropdown::None;
+        }
+
+        if let Some(area) = self.severity_button_area
+            && Self::in_area(col, row, area)
+        {
+            self.toggle_severity_dropdown();
+            return;
+        }
+
+        if let Some(area) = self.asset_button_area
+            && Self::in_area(col, row, area)
+        {
+            self.toggle_asset_dropdown();
+            return;
+        }
+
+        if let Some(area) = self.search_area
+            && Self::in_area(col, row, area)
+        {
+            self.search_focused = true;
+            self.active_dropdown = ActiveDropdown::None;
+            return;
+        }
+
+        if let Some(area) = self.list_area
+            && Self::in_area(col, row, area)
+        {
+            let list_start_y = area.y + 1;
+            if row >= list_start_y {
+                let clicked_index = (row - list_start_y) as usize;
+                if clicked_index < self.filtered_items.len() {
+                    self.list_state.select(Some(clicked_index));
+                }
+            }
+            return;
+        }
+
+        self.search_focused = false;
+    }
+
+    fn handle_scroll_down(&mut self) {
+        self.list_next();
+    }
+
+    fn handle_scroll_up(&mut self) {
+        self.list_previous();
+    }
+
+    fn render(&mut self, f: &mut Frame, area: Rect) {
         let main_chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
@@ -315,13 +386,19 @@ impl SearchTab {
         self.render_left_panel(f, main_chunks[0]);
         self.render_details(f, main_chunks[1]);
 
-        if self.dropdown_open {
+        if self.active_dropdown != ActiveDropdown::None {
             self.render_dropdown_menu(f);
         }
     }
+}
 
+// ---------------------------------------------------------------------------
+// Private rendering helpers
+// ---------------------------------------------------------------------------
+
+impl SearchTab {
     fn render_left_panel(&mut self, f: &mut Frame, area: Rect) {
-        let chunks = Layout::default()
+        let rows = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(3),
@@ -330,9 +407,17 @@ impl SearchTab {
             ])
             .split(area);
 
-        self.render_search_box(f, chunks[0]);
-        self.render_dropdown_button(f, chunks[1]);
-        self.render_list(f, chunks[2]);
+        self.render_search_box(f, rows[0]);
+
+        // Severity and asset filters side by side
+        let filter_cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(rows[1]);
+
+        self.render_severity_button(f, filter_cols[0]);
+        self.render_asset_button(f, filter_cols[1]);
+        self.render_list(f, rows[2]);
     }
 
     fn render_search_box(&mut self, f: &mut Frame, area: Rect) {
@@ -357,13 +442,13 @@ impl SearchTab {
         f.render_widget(input, area);
     }
 
-    fn render_dropdown_button(&mut self, f: &mut Frame, area: Rect) {
-        self.dropdown_button_area = Some(area);
+    fn render_severity_button(&mut self, f: &mut Frame, area: Rect) {
+        self.severity_button_area = Some(area);
 
-        let arrow = if self.dropdown_open { "▲" } else { "▼" };
+        let arrow = if self.active_dropdown == ActiveDropdown::Severity { "▲" } else { "▼" };
         let text = format!(" {} {}", self.severity_filter.as_str(), arrow);
 
-        let border_style = if self.dropdown_open {
+        let border_style = if self.active_dropdown == ActiveDropdown::Severity {
             Style::default().fg(Color::Blue)
         } else {
             Style::default().fg(Color::White)
@@ -380,10 +465,39 @@ impl SearchTab {
         f.render_widget(button, area);
     }
 
+    fn render_asset_button(&mut self, f: &mut Frame, area: Rect) {
+        self.asset_button_area = Some(area);
+
+        let arrow = if self.active_dropdown == ActiveDropdown::Asset { "▲" } else { "▼" };
+        let text = format!(" {} {}", self.asset_filter.as_str(), arrow);
+
+        let border_style = if self.active_dropdown == ActiveDropdown::Asset {
+            Style::default().fg(Color::Blue)
+        } else {
+            Style::default().fg(Color::White)
+        };
+
+        let button = Paragraph::new(text)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(border_style)
+                    .title(" Asset Filter (a or click) ")
+            )
+            .style(Style::default().fg(self.asset_filter.color()).add_modifier(Modifier::BOLD));
+        f.render_widget(button, area);
+    }
+
     fn render_dropdown_menu(&mut self, f: &mut Frame) {
-        if let Some(button_area) = self.dropdown_button_area {
-            let options = SeverityFilter::all_options();
-            let menu_height = options.len() as u16 + 2;
+        let button_area = match self.active_dropdown {
+            ActiveDropdown::Severity => self.severity_button_area,
+            ActiveDropdown::Asset => self.asset_button_area,
+            ActiveDropdown::None => None,
+        };
+
+        if let Some(button_area) = button_area {
+            let option_count = self.dropdown_option_count();
+            let menu_height = option_count as u16 + 2;
 
             let menu_area = Rect {
                 x: button_area.x,
@@ -395,18 +509,29 @@ impl SearchTab {
 
             f.render_widget(Clear, menu_area);
 
-            let items: Vec<ListItem> = options
-                .iter()
-                .enumerate()
-                .map(|(i, filter)| {
-                    let style = if i == self.dropdown_selected {
-                        Style::default().bg(Color::Blue).fg(Color::White).add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(filter.color())
-                    };
-                    ListItem::new(format!(" {} ", filter.as_str())).style(style)
-                })
-                .collect();
+            let items: Vec<ListItem> = match self.active_dropdown {
+                ActiveDropdown::Severity => {
+                    SeverityFilter::OPTIONS.iter().enumerate().map(|(i, filter)| {
+                        let style = if i == self.dropdown_selected {
+                            Style::default().bg(Color::Blue).fg(Color::White).add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(filter.color())
+                        };
+                        ListItem::new(format!(" {} ", filter.as_str())).style(style)
+                    }).collect()
+                }
+                ActiveDropdown::Asset => {
+                    self.asset_options.iter().enumerate().map(|(i, filter)| {
+                        let style = if i == self.dropdown_selected {
+                            Style::default().bg(Color::Blue).fg(Color::White).add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(filter.color())
+                        };
+                        ListItem::new(format!(" {} ", filter.as_str())).style(style)
+                    }).collect()
+                }
+                ActiveDropdown::None => vec![],
+            };
 
             let list = List::new(items)
                 .block(Block::default().borders(Borders::ALL));
@@ -446,12 +571,14 @@ impl SearchTab {
                 .direction(Direction::Vertical)
                 .margin(1)
                 .constraints([
-                    Constraint::Length(2),
-                    Constraint::Length(2),
-                    Constraint::Length(2),
-                    Constraint::Length(2),
-                    Constraint::Length(1),
-                    Constraint::Min(0),
+                    Constraint::Length(2), // title
+                    Constraint::Length(2), // severity
+                    Constraint::Length(2), // asset
+                    Constraint::Length(2), // date
+                    Constraint::Length(2), // status
+                    Constraint::Length(2), // location
+                    Constraint::Length(1), // spacer
+                    Constraint::Min(0),   // description
                 ])
                 .split(inner);
 
@@ -467,24 +594,36 @@ impl SearchTab {
             ]));
             f.render_widget(severity, chunks[1]);
 
+            let asset = Paragraph::new(Line::from(vec![
+                Span::styled("Asset: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(&finding.asset, Style::default().fg(Color::Cyan)),
+            ]));
+            f.render_widget(asset, chunks[2]);
+
+            let date = Paragraph::new(Line::from(vec![
+                Span::styled("Date: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(if finding.date.is_empty() { "—" } else { &finding.date }),
+            ]));
+            f.render_widget(date, chunks[3]);
+
             let status = Paragraph::new(Line::from(vec![
                 Span::styled("Status: ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::styled(finding.status.as_str(), Style::default().fg(finding.status.color())),
             ]));
-            f.render_widget(status, chunks[2]);
+            f.render_widget(status, chunks[4]);
 
             let location = Paragraph::new(Line::from(vec![
                 Span::styled("Location: ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::styled(&finding.location, Style::default().fg(Color::Cyan)),
             ]));
-            f.render_widget(location, chunks[3]);
+            f.render_widget(location, chunks[5]);
 
             let description = Paragraph::new(Line::from(vec![
                 Span::styled("Description:\n", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(&finding.description),
             ]))
             .wrap(Wrap { trim: true });
-            f.render_widget(description, chunks[5]);
+            f.render_widget(description, chunks[7]);
         } else {
             let empty = Paragraph::new("No finding selected")
                 .block(block)

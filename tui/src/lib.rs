@@ -1,16 +1,12 @@
 mod app;
 mod tabs;
 
-pub use app::{GraphData, SeverityBar, Finding, Severity, Status};
-pub use tabs::graph::GraphTab;
-pub use tabs::search::SearchTab;
-pub use tabs::placeholder::PlaceholderTab;
-
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use models::{Finding, GraphData};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
@@ -23,10 +19,12 @@ use std::io::{self, stdout};
 
 use app::App;
 
+/// Launch the TUI with sample/default data.
 pub fn run() -> io::Result<()> {
-    run_with_data(GraphData::default_severity(), Finding::default_findings())
+    run_with_data(GraphData::sample_severity(), Finding::sample_findings())
 }
 
+/// Launch the TUI with the provided data.
 pub fn run_with_data(graph_data: GraphData, findings: Vec<Finding>) -> io::Result<()> {
     enable_raw_mode()?;
     let mut stdout = stdout();
@@ -54,7 +52,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
 
             let titles: Vec<Line> = app.tab_titles().iter().map(|t| Line::from(*t)).collect();
             let tabs = Tabs::new(titles)
-                .block(Block::default().borders(Borders::ALL).title(" Demo TUI (t: switch tab, q: quit) "))
+                .block(Block::default().borders(Borders::ALL).title(" pog (t: switch tab, q: quit) "))
                 .select(app.current_tab_index())
                 .style(Style::default().fg(Color::White))
                 .highlight_style(Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD));
@@ -66,10 +64,10 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
         if event::poll(std::time::Duration::from_millis(100))? {
             match event::read()? {
                 Event::Key(key) => {
-                    if !app.handle_key(key.code) {
-                        if key.code == KeyCode::Char('q') || key.code == KeyCode::Esc {
-                            return Ok(());
-                        }
+                    if !app.handle_key(key.code)
+                        && (key.code == KeyCode::Char('q') || key.code == KeyCode::Esc)
+                    {
+                        return Ok(());
                     }
                 }
                 Event::Mouse(mouse) => {
