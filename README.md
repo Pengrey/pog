@@ -15,10 +15,52 @@ browse the file tree directly with `find`, `grep`, `cat`, `tree`, etc.
 - **Interactive TUI** – tabbed dashboard with keyboard & mouse support.
   - **Graph** – severity distribution bars + a line chart of findings over time (Braille markers), with per-severity toggle filters.
   - **Search** – full-text search across all findings with severity, asset, status and date filters, plus a detail panel.
-- **PDF reports** – generate professional template-driven PDF reports scoped by asset and date range. No external dependencies required.
+- **PDF reports** – generate professional template-driven PDF reports scoped by asset and date range (requires `pdflatex`, see [Dependencies](#dependencies)).
 - **CSV export** – one-command export of the entire database.
 - **Bulk import** – import an entire directory of finding folders at once.
 - **Zero config** – runs out of the box; data lives in `~/.pog` (or `$POGDIR`).
+
+---
+
+## Dependencies
+
+`pog` itself is a single static binary with no runtime dependencies for
+most commands. **PDF report generation** (`pog report`) requires a working
+`pdflatex` installation.
+
+### Installing pdflatex
+
+**Arch Linux:**
+
+```bash
+sudo pacman -S texlive-basic texlive-bin texlive-latex \
+               texlive-latexrecommended texlive-fontsrecommended
+```
+
+**Debian / Ubuntu:**
+
+```bash
+sudo apt install texlive-latex-base texlive-latex-recommended \
+                 texlive-fonts-recommended
+```
+
+**Fedora:**
+
+```bash
+sudo dnf install texlive-latex texlive-collection-fontsrecommended
+```
+
+**macOS (Homebrew):**
+
+```bash
+brew install --cask mactex-no-gui
+```
+
+Verify the installation with:
+
+```bash
+pdflatex --version
+```
 
 ---
 
@@ -253,9 +295,7 @@ Info | {{ info }} | Informational / best practice
 {% for f in findings %}
 #! finding {{ f.severity }} {{ f.num }}. {{ f.title }}
 #! meta Severity: {{ f.severity }}
-#! meta Asset: {{ f.asset }}
 #! meta Location: {{ f.location }}
-#! meta Status: {{ f.status }}
 #! spacer 2
 {{ f.description }}
 {% endfor %}

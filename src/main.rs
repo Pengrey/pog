@@ -74,9 +74,9 @@ fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
             );
 
             storage::generate_report(
-                Path::new(&template),
-                Path::new(&output),
                 &findings,
+                &template,
+                &output,
                 &asset,
                 &from,
                 &to,
