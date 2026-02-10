@@ -154,20 +154,20 @@ See [`examples/report_template_example/template.tmpl`](examples/report_template_
 
 ### `pog update-status`
 
-Update the status of a finding by its ID (folder name).
+Update the status of a finding by its asset and hex ID.
 
 ```
-pog update-status -i <id> -S <status>
+pog update-status -a <asset> -i <hex_id> -S <status>
 ```
 
 Valid statuses: `Open`, `InProgress`, `Resolved`, `FalsePositive`.
 
 ```
-$ pog update-status -i sql-injection -S Resolved
-[+] SQL Injection (nexus_portal) → Resolved
+$ pog update-status -a nexus_portal -i 0x001 -S Resolved
+[+] SQL Injection [0x001] (nexus_portal) → Resolved
 
-$ pog update-status -i weak-tls -S FalsePositive
-[+] Weak TLS Configuration (orion_gateway) → False Positive
+$ pog update-status -a orion_gateway -i 0x003 -S FalsePositive
+[+] Weak TLS Configuration [0x003] (orion_gateway) → False Positive
 ```
 
 ### `pog clean`

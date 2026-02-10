@@ -106,12 +106,12 @@ fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
             success!("Report written to {}", output);
         }
 
-        Commands::UpdateStatus { id, status } => {
+        Commands::UpdateStatus { asset, id, status } => {
             let parsed: models::Status = status.parse()
                 .map_err(|e: String| e)?;
             let db = pog.open_db()?;
-            let (title, asset) = db.update_finding_status(&id, parsed.as_str())?;
-            success!("{} ({}) → {}", title, asset, parsed);
+            let title = db.update_finding_status(&asset, &id, parsed.as_str())?;
+            success!("{} [{}] ({}) → {}", title, id, asset, parsed);
         }
 
         Commands::Clean {} => {

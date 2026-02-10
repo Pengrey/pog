@@ -288,19 +288,19 @@ impl Database {
         Ok(counts)
     }
 
-    /// Update the status of a finding identified by its slug.
-    /// Returns the finding title and asset on success.
-    pub fn update_finding_status(&self, slug: &str, status: &str) -> Result<(String, String)> {
-        let (title, asset): (String, String) = self.conn.query_row(
-            "SELECT title, asset FROM findings WHERE slug = ?1",
-            params![slug],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+    /// Update the status of a finding identified by its asset and hex ID.
+    /// Returns the finding title on success.
+    pub fn update_finding_status(&self, asset: &str, hex_id: &str, status: &str) -> Result<String> {
+        let title: String = self.conn.query_row(
+            "SELECT title FROM findings WHERE asset = ?1 AND hex_id = ?2",
+            params![asset, hex_id],
+            |row| row.get(0),
         )?;
         self.conn.execute(
-            "UPDATE findings SET status = ?1 WHERE slug = ?2",
-            params![status, slug],
+            "UPDATE findings SET status = ?1 WHERE asset = ?2 AND hex_id = ?3",
+            params![status, asset, hex_id],
         )?;
-        Ok((title, asset))
+        Ok(title)
     }
 
     /// Get the hex_id for a finding by its slug.

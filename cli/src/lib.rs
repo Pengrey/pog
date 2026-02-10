@@ -62,7 +62,11 @@ pub enum Commands {
 
     /// Update the status of a finding
     UpdateStatus {
-        /// ID (folder name) of the finding to update, e.g. sql-injection
+        /// Asset name, e.g. nexus_portal
+        #[arg(short, long)]
+        asset: String,
+
+        /// Finding hex ID, e.g. 0x001
         #[arg(short, long)]
         id: String,
 
