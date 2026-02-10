@@ -1,3 +1,5 @@
+use ratatui::style::Color;
+
 /// A tracked asset with metadata.
 #[derive(Clone, Debug)]
 pub struct Asset {
@@ -45,6 +47,17 @@ impl Asset {
     pub fn with_dns_or_ip(mut self, dns: impl Into<String>) -> Self {
         self.dns_or_ip = dns.into();
         self
+    }
+
+    /// Map the criticality string to a TUI color.
+    pub fn criticality_color(&self) -> Color {
+        match self.criticality.to_lowercase().as_str() {
+            "critical" => Color::Red,
+            "high" => Color::LightRed,
+            "medium" => Color::Yellow,
+            "low" => Color::Green,
+            _ => Color::Gray,
+        }
     }
 
     /// Sample assets for demonstration / testing purposes.

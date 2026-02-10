@@ -161,48 +161,7 @@ impl Database {
 
     /// Load all findings from the database.
     pub fn all_findings(&self) -> Result<Vec<Finding>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, hex_id, title, severity, asset, date, location, description, status, slug
-             FROM findings ORDER BY asset, hex_id"
-        )?;
-
-        let rows = stmt.query_map([], |row| {
-            Ok(FindingRow {
-                id: row.get(0)?,
-                hex_id: row.get(1)?,
-                title: row.get(2)?,
-                severity: row.get(3)?,
-                asset: row.get(4)?,
-                date: row.get(5)?,
-                location: row.get(6)?,
-                description: row.get(7)?,
-                status: row.get(8)?,
-                slug: row.get(9)?,
-            })
-        })?;
-
-        let mut findings = Vec::new();
-        for row in rows {
-            let r = row?;
-            let images = self.images_for(r.id)?;
-            let severity: Severity = r.severity.parse().unwrap_or(Severity::Info);
-            let status: Status = r.status.parse().unwrap_or(Status::Open);
-
-            findings.push(Finding {
-                id: Some(r.id),
-                hex_id: r.hex_id,
-                slug: r.slug,
-                title: r.title,
-                severity,
-                asset: r.asset,
-                date: r.date,
-                location: r.location,
-                description: r.description,
-                status,
-                images,
-            });
-        }
-        Ok(findings)
+        self.findings_filtered(None, None, None)
     }
 
     /// Load findings filtered by optional asset and date range.
@@ -212,62 +171,25 @@ impl Database {
         from: Option<&str>,
         to: Option<&str>,
     ) -> Result<Vec<Finding>> {
-        let mut sql = String::from(
-            "SELECT id, hex_id, title, severity, asset, date, location, description, status, slug
-             FROM findings WHERE 1=1"
+        let (where_clause, param_values) = build_where_clause(asset, from, to);
+
+        let sql = format!(
+            "SELECT id, hex_id, title, severity, asset, date, location, description, status, slug \
+             FROM findings{} ORDER BY asset, hex_id",
+            where_clause
         );
-        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
-        if let Some(a) = asset {
-            sql.push_str(" AND asset = ?");
-            params_vec.push(Box::new(a.to_string()));
-        }
-        if let Some(f) = from {
-            sql.push_str(" AND date >= ?");
-            params_vec.push(Box::new(f.to_string()));
-        }
-        if let Some(t) = to {
-            sql.push_str(" AND date <= ?");
-            params_vec.push(Box::new(t.to_string()));
-        }
-        sql.push_str(" ORDER BY date, asset, title");
+        let params: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|v| v as &dyn rusqlite::types::ToSql).collect();
 
-        let params_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
         let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map(params_refs.as_slice(), |row| {
-            Ok(FindingRow {
-                id: row.get(0)?,
-                hex_id: row.get(1)?,
-                title: row.get(2)?,
-                severity: row.get(3)?,
-                asset: row.get(4)?,
-                date: row.get(5)?,
-                location: row.get(6)?,
-                description: row.get(7)?,
-                status: row.get(8)?,
-                slug: row.get(9)?,
-            })
-        })?;
+        let rows = stmt.query_map(params.as_slice(), |row| Ok(FindingRow::from_row(row)))?;
 
         let mut findings = Vec::new();
         for row in rows {
             let r = row?;
             let images = self.images_for(r.id)?;
-            let severity: Severity = r.severity.parse().unwrap_or(Severity::Info);
-            let status: Status = r.status.parse().unwrap_or(Status::Open);
-            findings.push(Finding {
-                id: Some(r.id),
-                hex_id: r.hex_id,
-                slug: r.slug,
-                title: r.title,
-                severity,
-                asset: r.asset,
-                date: r.date,
-                location: r.location,
-                description: r.description,
-                status,
-                images,
-            });
+            findings.push(r.into_finding(images));
         }
         Ok(findings)
     }
@@ -391,75 +313,18 @@ impl Database {
         from: Option<&str>,
         to: Option<&str>,
     ) -> Result<String> {
+        let findings = self.findings_filtered(asset, from, to)?;
+
         let mut out = String::from("hex_id,title,severity,asset,date,location,status,description\n");
-
-        let mut clauses: Vec<String> = Vec::new();
-        let mut param_values: Vec<String> = Vec::new();
-
-        if let Some(a) = asset {
-            param_values.push(a.to_string());
-            clauses.push(format!("asset = ?{}", param_values.len()));
-        }
-        if let Some(f) = from {
-            param_values.push(f.to_string());
-            clauses.push(format!("date >= ?{}", param_values.len()));
-        }
-        if let Some(t) = to {
-            param_values.push(t.to_string());
-            clauses.push(format!("date <= ?{}", param_values.len()));
-        }
-
-        let where_clause = if clauses.is_empty() {
-            String::new()
-        } else {
-            format!(" WHERE {}", clauses.join(" AND "))
-        };
-
-        let sql = format!(
-            "SELECT hex_id, title, severity, asset, date, location, status, description \
-             FROM findings{} ORDER BY asset, hex_id",
-            where_clause
-        );
-
-        let params: Vec<&dyn rusqlite::types::ToSql> =
-            param_values.iter().map(|v| v as &dyn rusqlite::types::ToSql).collect();
-
-        let mut stmt = self.conn.prepare(&sql)?;
-
-        let rows = stmt.query_map(params.as_slice(), |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, String>(4)?,
-                row.get::<_, String>(5)?,
-                row.get::<_, String>(6)?,
-                row.get::<_, String>(7)?,
-            ))
-        })?;
-
-        for row in rows {
-            let (hex_id, title, severity, asset, date, location, status, description) = row?;
-            // Escape fields that may contain commas, quotes or newlines
-            out.push_str(&csv_field(&hex_id));
-            out.push(',');
-            out.push_str(&csv_field(&title));
-            out.push(',');
-            out.push_str(&csv_field(&severity));
-            out.push(',');
-            out.push_str(&csv_field(&asset));
-            out.push(',');
-            out.push_str(&csv_field(&date));
-            out.push(',');
-            out.push_str(&csv_field(&location));
-            out.push(',');
-            out.push_str(&csv_field(&status));
-            out.push(',');
-            out.push_str(&csv_field(&description));
+        for f in &findings {
+            let fields = [
+                &f.hex_id, &f.title, f.severity.as_str(), &f.asset,
+                &f.date, &f.location, f.status.as_str(), &f.description,
+            ];
+            let line: Vec<String> = fields.iter().map(|v| csv_field(v)).collect();
+            out.push_str(&line.join(","));
             out.push('\n');
         }
-
         Ok(out)
     }
 
@@ -484,10 +349,43 @@ impl Database {
 /// quotes or newlines; double any internal quotes.
 fn csv_field(value: &str) -> String {
     if value.contains(',') || value.contains('"') || value.contains('\n') {
-        format!("\"{}\"" , value.replace('"', "\"\""))
+        format!("\"{}\"", value.replace('"', "\"\""))
     } else {
         value.to_string()
     }
+}
+
+/// Build a WHERE clause and parameter list from optional filters.
+///
+/// Returns `("", vec![])` when no filters are set, or
+/// `(" WHERE asset = ?1 AND date >= ?2", vec!["web_app", "2026/01"])` etc.
+fn build_where_clause(
+    asset: Option<&str>,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> (String, Vec<String>) {
+    let mut clauses: Vec<String> = Vec::new();
+    let mut values: Vec<String> = Vec::new();
+
+    if let Some(a) = asset {
+        values.push(a.to_string());
+        clauses.push(format!("asset = ?{}", values.len()));
+    }
+    if let Some(f) = from {
+        values.push(f.to_string());
+        clauses.push(format!("date >= ?{}", values.len()));
+    }
+    if let Some(t) = to {
+        values.push(t.to_string());
+        clauses.push(format!("date <= ?{}", values.len()));
+    }
+
+    let sql = if clauses.is_empty() {
+        String::new()
+    } else {
+        format!(" WHERE {}", clauses.join(" AND "))
+    };
+    (sql, values)
 }
 
 /// Internal helper for row mapping.
@@ -502,6 +400,41 @@ struct FindingRow {
     description: String,
     status: String,
     slug: String,
+}
+
+impl FindingRow {
+    fn from_row(row: &rusqlite::Row) -> Self {
+        Self {
+            id: row.get(0).unwrap_or_default(),
+            hex_id: row.get(1).unwrap_or_default(),
+            title: row.get(2).unwrap_or_default(),
+            severity: row.get(3).unwrap_or_default(),
+            asset: row.get(4).unwrap_or_default(),
+            date: row.get(5).unwrap_or_default(),
+            location: row.get(6).unwrap_or_default(),
+            description: row.get(7).unwrap_or_default(),
+            status: row.get(8).unwrap_or_default(),
+            slug: row.get(9).unwrap_or_default(),
+        }
+    }
+
+    fn into_finding(self, images: Vec<String>) -> Finding {
+        let severity: Severity = self.severity.parse().unwrap_or(Severity::Info);
+        let status: Status = self.status.parse().unwrap_or(Status::Open);
+        Finding {
+            id: Some(self.id),
+            hex_id: self.hex_id,
+            slug: self.slug,
+            title: self.title,
+            severity,
+            asset: self.asset,
+            date: self.date,
+            location: self.location,
+            description: self.description,
+            status,
+            images,
+        }
+    }
 }
 
 // ------------------------------------------------------------------

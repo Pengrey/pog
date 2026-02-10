@@ -1,5 +1,6 @@
 mod app;
 mod tabs;
+pub mod widgets;
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseEventKind},
