@@ -7,6 +7,7 @@ Findings and assets are plain **Markdown files**. Use `pog` to import, search an
 ---
 
 ## Demo
+[Screencast_20260210_164739.webm](https://github.com/user-attachments/assets/c7552340-7074-4a78-ba5d-b80dee208e34)
 
 ---
 
