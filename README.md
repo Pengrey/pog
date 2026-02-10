@@ -6,6 +6,10 @@ Findings and assets are plain **Markdown files**. Use `pog` to import, search an
 
 ---
 
+## Demo
+
+---
+
 ## Features
 
 | Feature | Description |
@@ -14,9 +18,11 @@ Findings and assets are plain **Markdown files**. Use `pog` to import, search an
 | **Asset management** | Track assets with metadata: name, description, contact, criticality, DNS/IP. |
 | **Asset-based organisation** | Findings grouped by target asset with unique hex IDs. |
 | **Interactive TUI** | Tabbed dashboard (Graph, Search, Assets) with keyboard & mouse. |
-| **PDF reports** | Template-driven PDF reports scoped by asset and date range. |
+| **PDF reports** | Template-driven PDF reports via embedded [tectonic](https://tectonic-typesetting.github.io/) engine – no external LaTeX install needed. |
 | **CSV export** | One-command export of all findings. |
 | **Bulk import** | Batch-import findings or assets in one go. |
+| **Upsert on re-import** | Re-importing a finding (same slug) updates the existing record. |
+| **Sample data** | TUI shows demo findings & assets when the database is empty. |
 | **Zero config** | Data lives in `~/.pog` (or `$POGDIR`). |
 
 ---
@@ -93,22 +99,46 @@ Launch an interactive TUI with three tabs:
 
 | Tab | Description |
 |-----|-------------|
-| **Graph** | Severity distribution bars, Braille line chart, severity toggle filters. |
-| **Search** | Full-text search with severity / asset / status filters and detail panel. |
-| **Assets** | Scrollable asset list with detail panel showing all metadata. |
+| **Graph** | Severity distribution bars, Braille line chart (weekly timeline), severity toggle filters. |
+| **Search** | Full-text search with severity / asset dropdown filters and detail panel. |
+| **Assets** | Searchable asset list with criticality dropdown filter and detail panel. |
 
 **Keyboard shortcuts:**
+
+*Global:*
 
 | Key | Action |
 |-----|--------|
 | `Tab` / `t` | Switch tab |
+| `q` / `Esc` | Quit (when nothing is focused) |
+
+*Graph tab:*
+
+| Key | Action |
+|-----|--------|
+| `↑` / `k` | Move cursor up (severity filters) |
+| `↓` / `j` | Move cursor down (severity filters) |
+| `Space` / `Enter` | Toggle selected severity filter |
+
+*Search tab:*
+
+| Key | Action |
+|-----|--------|
+| `s` | Focus search box |
+| `f` | Toggle severity filter dropdown |
+| `a` | Toggle asset filter dropdown |
+| `↑` / `↓` | Navigate finding list |
+| `Esc` | Unfocus search / close dropdown |
+
+*Assets tab:*
+
+| Key | Action |
+|-----|--------|
+| `s` | Focus search box |
+| `f` | Toggle criticality filter dropdown |
 | `↑` / `k` | Move up |
 | `↓` / `j` | Move down |
-| `s` | Focus search (Search tab) |
-| `f` | Severity filter (Search tab) |
-| `a` | Asset filter (Search tab) |
-| `Esc` | Unfocus / close |
-| `q` | Quit |
+| `Esc` | Unfocus search / close dropdown |
 
 ### `pog export`
 
@@ -129,7 +159,7 @@ pog export --from 2025/09/01 --to 2026/01/31                       # date range 
 
 ### `pog report`
 
-Generate a PDF report from findings using a [MiniJinja](https://docs.rs/minijinja) template.
+Generate a PDF report from findings using a [MiniJinja](https://docs.rs/minijinja) template and the [tectonic](https://tectonic-typesetting.github.io) embedded TeX engine (no external LaTeX installation required).
 
 ```
 pog report -t template.tmpl --asset nexus_portal --from 2025/09/01 --to 2026/01/31
@@ -153,10 +183,14 @@ pog report -t template.tmpl --asset nexus_portal --from 2025/09/01 --to 2026/01/
 | `#! finding <severity> <text>` | Finding card (auto page-break) |
 | `#! meta <key>: <value>` | Key–value line |
 | `#! table` | Table from `\|`-delimited lines |
-| `#! index` | Auto-generated TOC |
+| `#! index` | Auto-generated TOC with page numbers & bookmarks |
 | `#! spacer <mm>` | Vertical spacing |
 | `#! pagebreak` | Page break |
 | `#! hr` | Horizontal rule |
+| `#! comment <text>` | Template-only note (not rendered in PDF) |
+| `#! image <path>` | Reserved – future logo / image support |
+
+Plain text between directives is rendered as Markdown-aware paragraphs supporting **bold**, *italic*, `inline code`, `` ```fenced code blocks``` ``, `[link text](url)`, `# headings` and `- bullet lists`.
 
 **Template variables:** `findings`, `date`, `asset`, `from`, `to`, `total`, `critical`, `high`, `medium`, `low`, `info`.
 
@@ -330,17 +364,19 @@ make clean        # clean artifacts
 
 Requires [Podman](https://podman.io). No local Rust toolchain needed.
 
+The container uses **Rust 1.89** (Debian Bookworm) and builds static libraries for graphite2 and harfbuzz (required by the tectonic PDF engine). The project uses Rust **edition 2024**.
+
 ### Project structure
 
 ```
-pog/
+pog/                          (Rust 2024 edition)
 ├── src/          # binary entry point
 ├── cli/          # CLI parsing (clap)
-├── models/       # domain types – Finding, Asset, Severity, GraphData
-├── storage/      # POGDIR layout, SQLite, import & report logic
-├── tui/          # ratatui TUI (tabs: Graph, Search, Assets)
-├── examples/     # sample findings & report template
-├── Dockerfile    # Podman build container
+├── models/       # domain types – Finding, Asset, Severity, Status, GraphData
+├── storage/      # POGDIR layout, SQLite (rusqlite), import, CSV export & PDF report (tectonic + MiniJinja)
+├── tui/          # ratatui + crossterm TUI (tabs: Graph, Search, Assets)
+├── examples/     # sample findings, assets & report template
+├── Dockerfile    # Podman build container (Rust 1.89 / Debian bookworm)
 ├── Makefile      # build targets
 └── Cargo.toml    # workspace root
 ```
