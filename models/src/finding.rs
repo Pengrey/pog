@@ -5,6 +5,10 @@ use crate::{Severity, Status};
 pub struct Finding {
     /// Database row id (`None` for findings not yet persisted).
     pub id: Option<i64>,
+    /// Hex identifier assigned per asset, e.g. `0x001`.
+    pub hex_id: String,
+    /// Human-readable identifier (folder name / slug), e.g. `sql-injection`.
+    pub slug: String,
     pub title: String,
     pub severity: Severity,
     /// The asset that was tested (lowercase, underscores for spaces).
@@ -28,9 +32,13 @@ impl Finding {
         description: impl Into<String>,
         status: Status,
     ) -> Self {
+        let title = title.into();
+        let slug = title.to_lowercase().replace(' ', "-");
         Self {
             id: None,
-            title: title.into(),
+            hex_id: String::new(),
+            slug,
+            title,
             severity,
             asset: asset.into(),
             date: date.into(),

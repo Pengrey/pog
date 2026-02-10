@@ -22,7 +22,7 @@ fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let pog = PogDir::init()?;
 
     match args.command {
-        Commands::Import { path, bulk } => {
+        Commands::ImportFindings { path, bulk } => {
             let folder = Path::new(&path);
             if bulk {
                 let findings = storage::import_bulk(folder, &pog)?;
@@ -36,9 +36,24 @@ fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
             }
         }
 
+        Commands::ImportAssets { path, bulk } => {
+            let file = Path::new(&path);
+            if bulk {
+                let assets = storage::import_assets_bulk(file, &pog)?;
+                success!("Imported {} asset(s)", assets.len());
+                for a in &assets {
+                    info!("{} [{}] ({})", a.name, a.criticality, a.dns_or_ip);
+                }
+            } else {
+                let asset = storage::import_asset(file, &pog)?;
+                success!("Imported asset: {} [{}]", asset.name, asset.criticality);
+            }
+        }
+
         Commands::View {} => {
             let db = pog.open_db()?;
             let findings = db.all_findings()?;
+            let assets = db.all_assets()?;
 
             let graph_data = if findings.is_empty() {
                 GraphData::sample_severity()
@@ -52,7 +67,13 @@ fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 findings
             };
 
-            tui::run_with_data(graph_data, display_findings)?;
+            let display_assets = if assets.is_empty() {
+                models::Asset::sample_assets()
+            } else {
+                assets
+            };
+
+            tui::run_with_data(graph_data, display_findings, display_assets)?;
         }
 
         Commands::Report { output, template, asset, from, to } => {
@@ -83,6 +104,14 @@ fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
             )?;
 
             success!("Report written to {}", output);
+        }
+
+        Commands::UpdateStatus { id, status } => {
+            let parsed: models::Status = status.parse()
+                .map_err(|e: String| e)?;
+            let db = pog.open_db()?;
+            let (title, asset) = db.update_finding_status(&id, parsed.as_str())?;
+            success!("{} ({}) → {}", title, asset, parsed);
         }
 
         Commands::Clean {} => {

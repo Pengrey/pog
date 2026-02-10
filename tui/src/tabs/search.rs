@@ -572,6 +572,7 @@ impl SearchTab {
                 .margin(1)
                 .constraints([
                     Constraint::Length(2), // title
+                    Constraint::Length(2), // id
                     Constraint::Length(2), // severity
                     Constraint::Length(2), // asset
                     Constraint::Length(2), // date
@@ -588,42 +589,48 @@ impl SearchTab {
             ]));
             f.render_widget(title, chunks[0]);
 
+            let id_line = Paragraph::new(Line::from(vec![
+                Span::styled("ID: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(&finding.hex_id, Style::default().fg(Color::Yellow)),
+            ]));
+            f.render_widget(id_line, chunks[1]);
+
             let severity = Paragraph::new(Line::from(vec![
                 Span::styled("Severity: ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::styled(finding.severity.as_str(), Style::default().fg(finding.severity.color())),
             ]));
-            f.render_widget(severity, chunks[1]);
+            f.render_widget(severity, chunks[2]);
 
             let asset = Paragraph::new(Line::from(vec![
                 Span::styled("Asset: ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::styled(&finding.asset, Style::default().fg(Color::Cyan)),
             ]));
-            f.render_widget(asset, chunks[2]);
+            f.render_widget(asset, chunks[3]);
 
             let date = Paragraph::new(Line::from(vec![
                 Span::styled("Date: ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(if finding.date.is_empty() { "—" } else { &finding.date }),
             ]));
-            f.render_widget(date, chunks[3]);
+            f.render_widget(date, chunks[4]);
 
             let status = Paragraph::new(Line::from(vec![
                 Span::styled("Status: ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::styled(finding.status.as_str(), Style::default().fg(finding.status.color())),
             ]));
-            f.render_widget(status, chunks[4]);
+            f.render_widget(status, chunks[5]);
 
             let location = Paragraph::new(Line::from(vec![
                 Span::styled("Location: ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::styled(&finding.location, Style::default().fg(Color::Cyan)),
             ]));
-            f.render_widget(location, chunks[5]);
+            f.render_widget(location, chunks[6]);
 
             let description = Paragraph::new(Line::from(vec![
                 Span::styled("Description:\n", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(&finding.description),
             ]))
             .wrap(Wrap { trim: true });
-            f.render_widget(description, chunks[7]);
+            f.render_widget(description, chunks[8]);
         } else {
             let empty = Paragraph::new("No finding selected")
                 .block(block)

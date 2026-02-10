@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use models::{Finding, Severity, Status};
+use models::{Asset, Finding, Severity, Status};
 use rusqlite::{params, Connection};
 
 use crate::error::Result;
@@ -51,6 +51,15 @@ impl Database {
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 finding_id  INTEGER NOT NULL REFERENCES findings(id) ON DELETE CASCADE,
                 path        TEXT    NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS assets (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT    NOT NULL UNIQUE,
+                description TEXT    NOT NULL DEFAULT '-',
+                contact     TEXT    NOT NULL DEFAULT '-',
+                criticality TEXT    NOT NULL DEFAULT '-',
+                dns_or_ip   TEXT    NOT NULL DEFAULT '-'
             );
             "
         )?;
@@ -153,20 +162,22 @@ impl Database {
     /// Load all findings from the database.
     pub fn all_findings(&self) -> Result<Vec<Finding>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, severity, asset, date, location, description, status
+            "SELECT id, hex_id, title, severity, asset, date, location, description, status, slug
              FROM findings ORDER BY asset, hex_id"
         )?;
 
         let rows = stmt.query_map([], |row| {
             Ok(FindingRow {
                 id: row.get(0)?,
-                title: row.get(1)?,
-                severity: row.get(2)?,
-                asset: row.get(3)?,
-                date: row.get(4)?,
-                location: row.get(5)?,
-                description: row.get(6)?,
-                status: row.get(7)?,
+                hex_id: row.get(1)?,
+                title: row.get(2)?,
+                severity: row.get(3)?,
+                asset: row.get(4)?,
+                date: row.get(5)?,
+                location: row.get(6)?,
+                description: row.get(7)?,
+                status: row.get(8)?,
+                slug: row.get(9)?,
             })
         })?;
 
@@ -179,6 +190,8 @@ impl Database {
 
             findings.push(Finding {
                 id: Some(r.id),
+                hex_id: r.hex_id,
+                slug: r.slug,
                 title: r.title,
                 severity,
                 asset: r.asset,
@@ -200,7 +213,7 @@ impl Database {
         to: Option<&str>,
     ) -> Result<Vec<Finding>> {
         let mut sql = String::from(
-            "SELECT id, title, severity, asset, date, location, description, status
+            "SELECT id, hex_id, title, severity, asset, date, location, description, status, slug
              FROM findings WHERE 1=1"
         );
         let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -224,13 +237,15 @@ impl Database {
         let rows = stmt.query_map(params_refs.as_slice(), |row| {
             Ok(FindingRow {
                 id: row.get(0)?,
-                title: row.get(1)?,
-                severity: row.get(2)?,
-                asset: row.get(3)?,
-                date: row.get(4)?,
-                location: row.get(5)?,
-                description: row.get(6)?,
-                status: row.get(7)?,
+                hex_id: row.get(1)?,
+                title: row.get(2)?,
+                severity: row.get(3)?,
+                asset: row.get(4)?,
+                date: row.get(5)?,
+                location: row.get(6)?,
+                description: row.get(7)?,
+                status: row.get(8)?,
+                slug: row.get(9)?,
             })
         })?;
 
@@ -242,6 +257,8 @@ impl Database {
             let status: Status = r.status.parse().unwrap_or(Status::Open);
             findings.push(Finding {
                 id: Some(r.id),
+                hex_id: r.hex_id,
+                slug: r.slug,
                 title: r.title,
                 severity,
                 asset: r.asset,
@@ -271,6 +288,21 @@ impl Database {
         Ok(counts)
     }
 
+    /// Update the status of a finding identified by its slug.
+    /// Returns the finding title and asset on success.
+    pub fn update_finding_status(&self, slug: &str, status: &str) -> Result<(String, String)> {
+        let (title, asset): (String, String) = self.conn.query_row(
+            "SELECT title, asset FROM findings WHERE slug = ?1",
+            params![slug],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        self.conn.execute(
+            "UPDATE findings SET status = ?1 WHERE slug = ?2",
+            params![status, slug],
+        )?;
+        Ok((title, asset))
+    }
+
     /// Get the hex_id for a finding by its slug.
     pub fn hex_id_for_slug(&self, slug: &str) -> Result<String> {
         let hex_id: String = self.conn.query_row(
@@ -282,12 +314,66 @@ impl Database {
     }
 
     // ------------------------------------------------------------------
+    // Asset operations
+    // ------------------------------------------------------------------
+
+    /// Insert or update an asset by name. Returns the row id.
+    pub fn upsert_asset(&self, asset: &Asset) -> Result<i64> {
+        let existing: Option<i64> = self.conn
+            .query_row(
+                "SELECT id FROM assets WHERE name = ?1",
+                params![asset.name],
+                |row| row.get(0),
+            )
+            .ok();
+
+        if let Some(id) = existing {
+            self.conn.execute(
+                "UPDATE assets SET description = ?1, contact = ?2, criticality = ?3, dns_or_ip = ?4 WHERE id = ?5",
+                params![asset.description, asset.contact, asset.criticality, asset.dns_or_ip, id],
+            )?;
+            Ok(id)
+        } else {
+            self.conn.execute(
+                "INSERT INTO assets (name, description, contact, criticality, dns_or_ip) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![asset.name, asset.description, asset.contact, asset.criticality, asset.dns_or_ip],
+            )?;
+            Ok(self.conn.last_insert_rowid())
+        }
+    }
+
+    /// Load all assets from the database.
+    pub fn all_assets(&self) -> Result<Vec<Asset>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, description, contact, criticality, dns_or_ip FROM assets ORDER BY name"
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            Ok(Asset {
+                id: Some(row.get(0)?),
+                name: row.get(1)?,
+                description: row.get(2)?,
+                contact: row.get(3)?,
+                criticality: row.get(4)?,
+                dns_or_ip: row.get(5)?,
+            })
+        })?;
+
+        let mut assets = Vec::new();
+        for row in rows {
+            assets.push(row?);
+        }
+        Ok(assets)
+    }
+
+    // ------------------------------------------------------------------
     // Destructive operations
     // ------------------------------------------------------------------
 
-    /// Delete all findings and images from the database.
+    /// Delete all findings, images, and assets from the database.
     pub fn clean(&self) -> Result<u64> {
         self.conn.execute("DELETE FROM finding_images", [])?;
+        self.conn.execute("DELETE FROM assets", [])?;
         let deleted = self.conn.execute("DELETE FROM findings", [])?;
         Ok(deleted as u64)
     }
@@ -374,6 +460,7 @@ fn csv_field(value: &str) -> String {
 /// Internal helper for row mapping.
 struct FindingRow {
     id: i64,
+    hex_id: String,
     title: String,
     severity: String,
     asset: String,
@@ -381,6 +468,7 @@ struct FindingRow {
     location: String,
     description: String,
     status: String,
+    slug: String,
 }
 
 // ------------------------------------------------------------------

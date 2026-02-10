@@ -6,7 +6,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use models::{Finding, GraphData};
+use models::{Asset, Finding, GraphData};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
@@ -21,18 +21,18 @@ use app::App;
 
 /// Launch the TUI with sample/default data.
 pub fn run() -> io::Result<()> {
-    run_with_data(GraphData::sample_severity(), Finding::sample_findings())
+    run_with_data(GraphData::sample_severity(), Finding::sample_findings(), Asset::sample_assets())
 }
 
 /// Launch the TUI with the provided data.
-pub fn run_with_data(graph_data: GraphData, findings: Vec<Finding>) -> io::Result<()> {
+pub fn run_with_data(graph_data: GraphData, findings: Vec<Finding>, assets: Vec<Asset>) -> io::Result<()> {
     enable_raw_mode()?;
     let mut stdout = stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new(graph_data, findings);
+    let mut app = App::new(graph_data, findings, assets);
     let result = run_app(&mut terminal, &mut app);
 
     disable_raw_mode()?;
@@ -73,9 +73,24 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App)
                 Event::Mouse(mouse) => {
                     if let MouseEventKind::Down(_) = mouse.kind {
                         if mouse.row >= 1 && mouse.row <= 2 {
-                            let tab_width = 14;
-                            let clicked_tab = (mouse.column as usize) / tab_width;
-                            app.select_tab(clicked_tab);
+                            // Compute actual tab hit regions from title widths.
+                            // ratatui Tabs renders:  " title1 │ title2 │ title3 "
+                            // Border left edge takes 1 column.
+                            let titles = app.tab_titles();
+                            let mut x: usize = 1; // skip left border
+                            let col = mouse.column as usize;
+                            let mut clicked = None;
+                            for (i, t) in titles.iter().enumerate() {
+                                let w = t.len() + 2; // " title "
+                                if col >= x && col < x + w {
+                                    clicked = Some(i);
+                                    break;
+                                }
+                                x += w + 1; // +1 for the "│" separator
+                            }
+                            if let Some(idx) = clicked {
+                                app.select_tab(idx);
+                            }
                         } else {
                             app.handle_click(mouse.column, mouse.row);
                         }

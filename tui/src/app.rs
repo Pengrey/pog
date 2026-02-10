@@ -1,8 +1,9 @@
 use crossterm::event::KeyCode;
-use models::{Finding, GraphData};
+use models::{Asset, Finding, GraphData};
 use ratatui::{layout::Rect, Frame};
 
 use crate::tabs::Tab;
+use crate::tabs::assets::AssetsTab;
 use crate::tabs::graph::GraphTab;
 use crate::tabs::search::SearchTab;
 
@@ -13,10 +14,11 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(graph_data: GraphData, findings: Vec<Finding>) -> Self {
+    pub fn new(graph_data: GraphData, findings: Vec<Finding>, assets: Vec<Asset>) -> Self {
         let tabs: Vec<Box<dyn Tab>> = vec![
             Box::new(GraphTab::new(graph_data, findings.clone())),
             Box::new(SearchTab::new(findings)),
+            Box::new(AssetsTab::new(assets)),
         ];
         Self { tabs, current: 0 }
     }

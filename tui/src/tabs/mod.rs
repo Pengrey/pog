@@ -1,3 +1,4 @@
+pub mod assets;
 pub mod graph;
 pub mod search;
 

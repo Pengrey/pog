@@ -13,7 +13,7 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     /// Import finding(s) from a folder
-    Import {
+    ImportFindings {
         /// Path to the finding folder (or parent folder when using --bulk)
         #[arg(short, long)]
         path: String,
@@ -23,7 +23,18 @@ pub enum Commands {
         bulk: bool,
     },
 
-    /// View all findings through a TUI
+    /// Import asset(s) from a Markdown file
+    ImportAssets {
+        /// Path to the asset Markdown file
+        #[arg(short, long)]
+        path: String,
+
+        /// Treat the file as containing multiple assets separated by ---
+        #[arg(short, long, default_value_t = false)]
+        bulk: bool,
+    },
+
+    /// View all findings and assets through a TUI
     View {},
 
     /// Generate a PDF report from findings
@@ -47,6 +58,17 @@ pub enum Commands {
         /// End date for the date range (YYYY/MM/DD)
         #[arg(long)]
         to: String,
+    },
+
+    /// Update the status of a finding
+    UpdateStatus {
+        /// ID (folder name) of the finding to update, e.g. sql-injection
+        #[arg(short, long)]
+        id: String,
+
+        /// New status: Open, InProgress, Resolved, FalsePositive
+        #[arg(short = 'S', long)]
+        status: String,
     },
 
     /// Wipe the database and all stored findings

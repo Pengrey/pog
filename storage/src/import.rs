@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use models::{Finding, Severity, Status};
+use models::{Asset, Finding, Severity, Status};
 
 use crate::error::{Result, StorageError};
 use crate::pogdir::PogDir;
@@ -45,6 +45,7 @@ pub fn import_finding(folder: &Path, pog: &PogDir) -> Result<Finding> {
     let db = pog.open_db()?;
     let (id, hex_id, _is_new) = db.upsert_finding(&finding, &slug)?;
     finding.id = Some(id);
+    finding.hex_id = hex_id.clone();
 
     // Copy files into POGDIR -----------------------------------------------
     let dest = pog.finding_dir(&finding.asset, &hex_id, &slug);
@@ -177,6 +178,8 @@ fn parse_finding_md(raw: &str, slug: &str) -> Result<Finding> {
 
     Ok(Finding {
         id: None,
+        hex_id: String::new(),
+        slug: slug.to_string(),
         title,
         severity,
         asset,
@@ -234,6 +237,119 @@ fn extract_field(line: &str, field: &str) -> Option<String> {
         }
     }
     None
+}
+
+// ---------------------------------------------------------------------------
+// Asset import
+// ---------------------------------------------------------------------------
+
+/// Import a single asset from a Markdown file.
+///
+/// The file should have the format:
+///
+/// ```markdown
+/// # asset_name
+///
+/// - **Description:** ...
+/// - **Contact:** ...
+/// - **Criticality:** ...
+/// - **DNS/IP:** ...
+/// ```
+///
+/// Only the name (title) is required; other fields default to `-`.
+pub fn import_asset(file: &Path, pog: &PogDir) -> Result<Asset> {
+    let raw = fs::read_to_string(file)?;
+    let asset = parse_asset_md(&raw)?;
+    let db = pog.open_db()?;
+    let id = db.upsert_asset(&asset)?;
+    write_asset_md(&asset, pog)?;
+    Ok(Asset { id: Some(id), ..asset })
+}
+
+/// Bulk-import assets: the file contains multiple assets separated by `---`.
+///
+/// Each section follows the same markdown format as a single asset.
+pub fn import_assets_bulk(file: &Path, pog: &PogDir) -> Result<Vec<Asset>> {
+    let raw = fs::read_to_string(file)?;
+    let mut assets = Vec::new();
+
+    // Split on `---` lines
+    let sections: Vec<&str> = raw.split("\n---").collect();
+
+    for section in sections {
+        let trimmed = section.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let asset = parse_asset_md(trimmed)?;
+        let db = pog.open_db()?;
+        let id = db.upsert_asset(&asset)?;
+        write_asset_md(&asset, pog)?;
+        assets.push(Asset { id: Some(id), ..asset });
+    }
+
+    Ok(assets)
+}
+
+/// Parse an asset from a markdown snippet.
+fn parse_asset_md(raw: &str) -> Result<Asset> {
+    let mut name = String::new();
+    let mut description = String::from("-");
+    let mut contact = String::from("-");
+    let mut criticality = String::from("-");
+    let mut dns_or_ip = String::from("-");
+
+    for line in raw.lines() {
+        let trimmed = line.trim();
+
+        // Name: first `# …` heading
+        if trimmed.starts_with("# ") && !trimmed.starts_with("## ") {
+            name = normalise_asset(trimmed.trim_start_matches('#').trim());
+            continue;
+        }
+
+        // Metadata bullet points
+        if let Some(value) = extract_field(trimmed, "description") {
+            if !value.is_empty() { description = value; }
+        } else if let Some(value) = extract_field(trimmed, "contact") {
+            if !value.is_empty() { contact = value; }
+        } else if let Some(value) = extract_field(trimmed, "criticality") {
+            if !value.is_empty() { criticality = value; }
+        } else if let Some(value) = extract_field(trimmed, "dns/ip") {
+            if !value.is_empty() { dns_or_ip = value; }
+        }
+    }
+
+    if name.is_empty() {
+        return Err(StorageError::ParseError("asset must have a name (# heading)".into()));
+    }
+
+    Ok(Asset {
+        id: None,
+        name,
+        description,
+        contact,
+        criticality,
+        dns_or_ip,
+    })
+}
+
+/// Write (or overwrite) the `asset.md` metadata file under the asset's
+/// directory in POGDIR: `findings/<asset_name>/asset.md`.
+fn write_asset_md(asset: &Asset, pog: &PogDir) -> Result<()> {
+    let dir = pog.asset_dir(&asset.name);
+    fs::create_dir_all(&dir)?;
+    let md = render_asset_md(asset);
+    fs::write(dir.join("asset.md"), md)?;
+    Ok(())
+}
+
+/// Render an asset to its canonical Markdown representation.
+fn render_asset_md(asset: &Asset) -> String {
+    format!(
+        "# {}\n\n- **Description:** {}\n- **Contact:** {}\n- **Criticality:** {}\n- **DNS/IP:** {}\n",
+        asset.name, asset.description, asset.contact, asset.criticality, asset.dns_or_ip,
+    )
 }
 
 // ---------------------------------------------------------------------------

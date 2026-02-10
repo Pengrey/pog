@@ -231,7 +231,7 @@ impl Tab for GraphTab {
     fn render(&mut self, f: &mut Frame, area: Rect) {
         // Top: severity distribution bars.  Bottom: timeline + filter.
         let bar_count = self.data.bars.len() as u16;
-        let severity_height = bar_count * 2 + 3;
+        let severity_height = bar_count * 2 + 4;
 
         let rows = Layout::default()
             .direction(Direction::Vertical)
