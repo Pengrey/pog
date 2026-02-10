@@ -1,16 +1,14 @@
-// storage/src/report.rs — LaTeX-based PDF report generation via pdflatex.
+// storage/src/report.rs — LaTeX-based PDF report generation via tectonic.
 //
 // The public entry point is [`generate_report`].  It renders a MiniJinja
 // template (`.tmpl`), parses the result into `Block`s, converts them to a
-// LaTeX document, writes the `.tex` source to a temp directory, invokes
-// `pdflatex`, and copies the finished PDF to the requested output path.
+// LaTeX document, and compiles it to PDF using the tectonic crate (an
+// embedded TeX engine — no external dependencies required).
 
 use crate::error::{Result, StorageError};
 use models::{Finding, Severity};
 use std::fs;
-use std::io::Write;
 use std::path::Path;
-use std::process::Command;
 
 // ───────────────────────── public API ─────────────────────────
 
@@ -863,92 +861,21 @@ fn latex_preamble() -> String {
 
 // ───────────────────────── PDF compilation ─────────────────────────
 
-/// Write the LaTeX source to a temp directory, invoke `pdflatex` twice
-/// (for TOC resolution), and copy the resulting PDF to `output_path`.
+/// Compile the LaTeX source to PDF using the embedded tectonic engine
+/// and write the result to `output_path`.  No external TeX installation
+/// is required.
 fn render_pdf(latex_src: &str, output_path: &str) -> Result<()> {
-    let tmp = std::env::temp_dir().join(format!("pog_report_{}", std::process::id()));
-    fs::create_dir_all(&tmp)?;
-
-    let tex_path = tmp.join("report.tex");
-    {
-        let mut f = fs::File::create(&tex_path)?;
-        f.write_all(latex_src.as_bytes())?;
-    }
-
-    // Find pdflatex
-    let pdflatex = find_pdflatex().ok_or_else(|| {
-        StorageError::ParseError(
-            "pdflatex not found. Please install a TeX distribution (e.g. texlive).".to_string(),
-        )
+    let pdf_data = tectonic::latex_to_pdf(latex_src).map_err(|e| {
+        StorageError::ParseError(format!("tectonic LaTeX compilation failed: {e}"))
     })?;
-
-    // Run pdflatex twice so that TOC / hyperref references resolve.
-    for _ in 0..2 {
-        let output = Command::new(&pdflatex)
-            .args([
-                "-interaction=nonstopmode",
-                "-halt-on-error",
-                "-output-directory",
-            ])
-            .arg(&tmp)
-            .arg(&tex_path)
-            .output()?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stdout);
-            // pdflatex writes errors to stdout, not stderr.
-            return Err(StorageError::ParseError(format!(
-                "pdflatex failed (exit {}):\n{}",
-                output.status,
-                stderr.lines().rev().take(30).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n"),
-            )));
-        }
-    }
-
-    let pdf_path = tmp.join("report.pdf");
-    if !pdf_path.exists() {
-        return Err(StorageError::ParseError(
-            "pdflatex ran successfully but report.pdf was not created".to_string(),
-        ));
-    }
 
     // Ensure output directory exists
     if let Some(parent) = Path::new(output_path).parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::copy(&pdf_path, output_path)?;
-
-    // Best-effort cleanup
-    let _ = fs::remove_dir_all(&tmp);
+    fs::write(output_path, &pdf_data)?;
 
     Ok(())
-}
-
-/// Search for `pdflatex` in `$PATH` and common TeX Live locations.
-fn find_pdflatex() -> Option<String> {
-    // Try $PATH first
-    if let Ok(output) = Command::new("which").arg("pdflatex").output() {
-        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !path.is_empty() && output.status.success() {
-            return Some(path);
-        }
-    }
-
-    // Common install locations
-    let candidates = [
-        "/usr/bin/pdflatex",
-        "/usr/local/bin/pdflatex",
-        "/usr/local/texlive/2024/bin/x86_64-linux/pdflatex",
-        "/usr/local/texlive/2025/bin/x86_64-linux/pdflatex",
-        "/Library/TeX/texbin/pdflatex",
-    ];
-    for c in &candidates {
-        if Path::new(c).exists() {
-            return Some(c.to_string());
-        }
-    }
-
-    None
 }
 
 // ───────────────────────── date helper ─────────────────────────
@@ -1553,14 +1480,6 @@ Some text here.
         assert!(result.is_none());
     }
 
-    // ── find_pdflatex ──
-
-    #[test]
-    fn find_pdflatex_returns_option() {
-        // Just verify it doesn't panic; availability depends on system.
-        let _result = find_pdflatex();
-    }
-
     // ── integration: blocks_to_latex with mixed content ──
 
     #[test]
@@ -1685,15 +1604,12 @@ Reflected XSS in the `search` parameter.
         assert!(clearpage_count >= 2);
     }
 
-    // ── render_pdf error when pdflatex missing ──
+    // ── render_pdf error on invalid LaTeX ──
 
     #[test]
     fn render_pdf_with_empty_latex_handles_error() {
-        // This tests that render_pdf handles missing pdflatex gracefully
-        // or pdflatex errors on empty content — either way, no panic.
+        // Empty input is not valid LaTeX — tectonic should return an error.
         let result = render_pdf("", "/tmp/pog_test_nonexistent.pdf");
-        // If pdflatex is not installed, we expect a ParseError.
-        // If it is installed, it will fail on empty input.
         assert!(result.is_err());
     }
 }

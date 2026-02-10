@@ -15,7 +15,7 @@ browse the file tree directly with `find`, `grep`, `cat`, `tree`, etc.
 - **Interactive TUI** – tabbed dashboard with keyboard & mouse support.
   - **Graph** – severity distribution bars + a line chart of findings over time (Braille markers), with per-severity toggle filters.
   - **Search** – full-text search across all findings with severity, asset, status and date filters, plus a detail panel.
-- **PDF reports** – generate professional template-driven PDF reports scoped by asset and date range (requires `pdflatex`, see [Dependencies](#dependencies)).
+- **PDF reports** – generate professional template-driven PDF reports scoped by asset and date range (built-in LaTeX engine, no external dependencies).
 - **CSV export** – one-command export of the entire database.
 - **Bulk import** – import an entire directory of finding folders at once.
 - **Zero config** – runs out of the box; data lives in `~/.pog` (or `$POGDIR`).
@@ -24,52 +24,25 @@ browse the file tree directly with `find`, `grep`, `cat`, `tree`, etc.
 
 ## Dependencies
 
-`pog` itself is a single static binary with no runtime dependencies for
-most commands. **PDF report generation** (`pog report`) requires a working
-`pdflatex` installation.
+`pog` is a single binary with **no external runtime dependencies**.
+PDF report generation uses an embedded LaTeX engine
+([tectonic](https://tectonic-typesetting.github.io)) — no `pdflatex` or
+TeX distribution required.
 
-### Installing pdflatex
-
-**Arch Linux:**
-
-```bash
-sudo pacman -S texlive-basic texlive-bin texlive-latex \
-               texlive-latexrecommended texlive-fontsrecommended
-```
-
-**Debian / Ubuntu:**
-
-```bash
-sudo apt install texlive-latex-base texlive-latex-recommended \
-                 texlive-fonts-recommended
-```
-
-**Fedora:**
-
-```bash
-sudo dnf install texlive-latex texlive-collection-fontsrecommended
-```
-
-**macOS (Homebrew):**
-
-```bash
-brew install --cask mactex-no-gui
-```
-
-Verify the installation with:
-
-```bash
-pdflatex --version
-```
+The release binary links dynamically only to standard system libraries
+available on all modern Linux distributions:
+`libc`, `libm`, `libstdc++`, `libgcc_s`, `libssl`, `libcrypto`.
 
 ---
 
 ## Quick start
 
 ```bash
-# Build release binary
+# Build the Podman build image (first time only)
+make pod-build
+
+# Build release binary (compiled & stripped inside a container)
 make release
-# or: cargo build --release
 
 # Import a single finding
 pog import -p ./sql-injection
@@ -412,23 +385,33 @@ find ~/.pog/findings/ -name "img" -type d
 
 ## Building
 
+Builds run inside a **Podman container** (Debian bookworm) to ensure
+reproducibility and semi-static linking. The container compiles
+harfbuzz and graphite2 from source as static libraries so the final
+binary is portable across Linux distributions.
+
 ```bash
-# Release build (recommended)
+# Build the container image (first time only)
+make pod-build
+
+# Release build — compiles inside the container then strips the binary
 make release
 
-# Run tests
+# Run the test suite
 make test
+
+# Debug build (with debug feature enabled)
+make debug
 
 # Clean build artifacts
 make clean
+
+# Rebuild the container image
+make pod-clean && make pod-build
 ```
 
-Or use `cargo` directly:
-
-```bash
-cargo build --release
-cargo test --workspace
-```
+Requires [Podman](https://podman.io) on the host. No Rust toolchain,
+TeX distribution, or C/C++ libraries need to be installed locally.
 
 ### Project structure
 
@@ -442,7 +425,8 @@ pog/
 ├── examples/
 │   ├── findings_example/           # sample finding folders
 │   └── report_template_example/    # MiniJinja report template (.tmpl)
-├── Makefile
+├── Dockerfile              # Podman build container (Debian + static C deps)
+├── Makefile                # Podman-driven build targets
 └── Cargo.toml              # workspace root
 ```
 

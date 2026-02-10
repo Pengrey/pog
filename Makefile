@@ -1,5 +1,7 @@
-# Cargo commands
-CARGO := cargo
+NAME	:= pog
+
+# Podman commands
+POD_RUN	:= podman run --rm -v $(PWD):/usr/local/src $(NAME)-builder build --release
 
 # Logger
 define log_info
@@ -10,19 +12,39 @@ define log_success
 	echo -e "[\033[0;32m+\033[0m] Done"
 endef
 
-release:
+all: release
+
+debug: POD_RUN += --features debug
+debug: build
+
+release: build
+	@ $(call log_info,Stripping binary...)
+	@ strip target/release/$(NAME)
+	@ $(call log_success)
+
+build: clean
 	@ $(call log_info,Compiling...)
-	@ $(CARGO) build --release
+	@ $(POD_RUN)
 	@ $(call log_success)
 
 test:
 	@ $(call log_info,Running tests...)
-	@ $(CARGO) test --workspace
+	@ podman run --rm -v $(PWD):/usr/local/src $(NAME)-builder test --workspace
+	@ $(call log_success)
+
+pod-build:
+	@ $(call log_info,Building Podman image...)
+	@ podman build --quiet -t $(NAME)-builder . --format docker
+	@ $(call log_success)
+
+pod-clean:
+	@ $(call log_info,Deleting Podman image...)
+	@ podman image rm $(NAME)-builder
 	@ $(call log_success)
 
 clean:
-	@ $(call log_info,Cleaning compile artifacts)
+	@ $(call log_info,Cleaning build artifacts)
 	@ rm -rf target
 	@ $(call log_success)
 
-.PHONY: release test clean
+.PHONY: all release debug build test pod-build pod-clean clean

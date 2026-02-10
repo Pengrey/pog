@@ -8,6 +8,7 @@ models = { path = "../models" }
 rusqlite = { version = "0.35", features = ["bundled"] }
 thiserror = "2"
 minijinja = "2"
+tectonic = { version = "0.15", features = ["external-harfbuzz"] }
 
 [dev-dependencies]
 tempfile = "3"

@@ -1,0 +1,2 @@
+# No special configuration needed — semi-static linking is
+# handled via TECTONIC_PKGCONFIG_FORCE_SEMI_STATIC in the Dockerfile.
