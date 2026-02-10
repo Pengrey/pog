@@ -382,18 +382,51 @@ impl Database {
     // Export
     // ------------------------------------------------------------------
 
-    /// Export all findings as CSV rows.
+    /// Export findings as CSV rows, optionally filtered by asset and/or date range.
     ///
     /// Returns the full CSV content as a `String` (header + rows).
-    pub fn export_csv(&self) -> Result<String> {
+    pub fn export_csv(
+        &self,
+        asset: Option<&str>,
+        from: Option<&str>,
+        to: Option<&str>,
+    ) -> Result<String> {
         let mut out = String::from("hex_id,title,severity,asset,date,location,status,description\n");
 
-        let mut stmt = self.conn.prepare(
-            "SELECT hex_id, title, severity, asset, date, location, status, description
-             FROM findings ORDER BY asset, hex_id"
-        )?;
+        let mut clauses: Vec<String> = Vec::new();
+        let mut param_values: Vec<String> = Vec::new();
 
-        let rows = stmt.query_map([], |row| {
+        if let Some(a) = asset {
+            param_values.push(a.to_string());
+            clauses.push(format!("asset = ?{}", param_values.len()));
+        }
+        if let Some(f) = from {
+            param_values.push(f.to_string());
+            clauses.push(format!("date >= ?{}", param_values.len()));
+        }
+        if let Some(t) = to {
+            param_values.push(t.to_string());
+            clauses.push(format!("date <= ?{}", param_values.len()));
+        }
+
+        let where_clause = if clauses.is_empty() {
+            String::new()
+        } else {
+            format!(" WHERE {}", clauses.join(" AND "))
+        };
+
+        let sql = format!(
+            "SELECT hex_id, title, severity, asset, date, location, status, description \
+             FROM findings{} ORDER BY asset, hex_id",
+            where_clause
+        );
+
+        let params: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|v| v as &dyn rusqlite::types::ToSql).collect();
+
+        let mut stmt = self.conn.prepare(&sql)?;
+
+        let rows = stmt.query_map(params.as_slice(), |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,

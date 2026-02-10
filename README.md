@@ -40,7 +40,7 @@ pog import-assets -p ./assets.md --bulk
 pog view
 
 # Export & report
-pog export -o findings.csv
+pog export -o findings.csv -a nexus_portal --from 2025/09/01 --to 2026/01/31
 pog report -t template.tmpl --asset nexus_portal --from 2025/09/01 --to 2026/01/31
 
 # Wipe everything
@@ -113,9 +113,19 @@ Launch an interactive TUI with three tabs:
 ### `pog export`
 
 ```
-pog export                    # writes to findings.csv
-pog export -o report.csv      # custom path
+pog export                                                         # all findings → findings.csv
+pog export -o report.csv                                           # custom output path
+pog export -a nexus_portal                                         # only findings for an asset
+pog export -a nexus_portal --from 2025/09/01 --to 2026/01/31       # asset + date range
+pog export --from 2025/09/01 --to 2026/01/31                       # date range across all assets
 ```
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-o` | Output CSV path | `findings.csv` |
+| `-a` | Filter by asset name | *(all)* |
+| `--from` | Start date (`YYYY/MM/DD`) | *(unbounded)* |
+| `--to` | End date (`YYYY/MM/DD`) | *(unbounded)* |
 
 ### `pog report`
 

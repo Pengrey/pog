@@ -119,9 +119,9 @@ fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
             success!("Database and findings directory wiped clean");
         }
 
-        Commands::Export { output } => {
+        Commands::Export { output, asset, from, to } => {
             let db = pog.open_db()?;
-            let csv = db.export_csv()?;
+            let csv = db.export_csv(asset.as_deref(), from.as_deref(), to.as_deref())?;
             std::fs::write(&output, &csv)?;
             success!("Exported findings to {}", output);
         }

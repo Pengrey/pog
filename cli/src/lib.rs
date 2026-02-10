@@ -83,6 +83,18 @@ pub enum Commands {
         /// Path to the output CSV file
         #[arg(short, long, default_value = "findings.csv")]
         output: String,
+
+        /// Filter by asset name
+        #[arg(short, long)]
+        asset: Option<String>,
+
+        /// Start date for the date range (YYYY/MM/DD)
+        #[arg(long)]
+        from: Option<String>,
+
+        /// End date for the date range (YYYY/MM/DD)
+        #[arg(long)]
+        to: Option<String>,
     },
 }
 
