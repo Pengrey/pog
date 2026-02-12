@@ -101,6 +101,7 @@ fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 &asset,
                 &from,
                 &to,
+                &pog,
             )?;
 
             success!("Report written to {}", output);

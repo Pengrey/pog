@@ -6,6 +6,7 @@
 // embedded TeX engine — no external dependencies required).
 
 use crate::error::{Result, StorageError};
+use crate::pogdir::PogDir;
 use models::{Finding, Severity};
 use std::fs;
 use std::path::Path;
@@ -23,8 +24,17 @@ pub fn generate_report(
     asset: &str,
     from: &str,
     to: &str,
+    pog: &PogDir,
 ) -> Result<()> {
     let raw = fs::read_to_string(template_path)?;
+
+    // ── set up work directory for images ──
+    let work_dir = tempfile::tempdir()?;
+    prepare_finding_images(findings, pog, work_dir.path())?;
+
+    let template_dir = Path::new(template_path)
+        .parent()
+        .unwrap_or(Path::new("."));
 
     // ── build MiniJinja context ──
     let mut env = minijinja::Environment::new();
@@ -45,8 +55,21 @@ pub fn generate_report(
             map.insert("asset".to_string(), minijinja::Value::from(f.asset.as_str()));
             map.insert("date".to_string(), minijinja::Value::from(f.date.as_str()));
             map.insert("location".to_string(), minijinja::Value::from(f.location.as_str()));
-            map.insert("description".to_string(), minijinja::Value::from(f.description.as_str()));
+            // Pre-process description to rewrite image paths for the work directory
+            let desc = rewrite_description_images(&f.description, &f.images, &f.slug);
+            map.insert("description".to_string(), minijinja::Value::from(desc));
             map.insert("status".to_string(), minijinja::Value::from(f.status.as_str()));
+            // Include images list (resolved to work-directory names)
+            let img_values: Vec<minijinja::Value> = f.images.iter()
+                .filter_map(|img| {
+                    Path::new(img).file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|basename| {
+                            minijinja::Value::from(format!("{}-{}", f.slug, basename))
+                        })
+                })
+                .collect();
+            map.insert("images".to_string(), minijinja::Value::from(img_values));
             minijinja::Value::from(map)
         })
         .collect();
@@ -74,11 +97,118 @@ pub fn generate_report(
         .map_err(|e| StorageError::ParseError(e.to_string()))?;
 
     // ── parse blocks and render via LaTeX ──
-    let blocks = parse_blocks(&rendered);
+    let mut blocks = parse_blocks(&rendered);
+    resolve_block_images(&mut blocks, template_dir, work_dir.path());
     let latex_src = blocks_to_latex(&blocks);
-    render_pdf(&latex_src, output_path)?;
+    render_pdf(&latex_src, output_path, work_dir.path())?;
 
     Ok(())
+}
+
+// ───────────────────────── image helpers ─────────────────────────
+
+/// Copy all images from the POGDIR finding directories into the work directory
+/// so they can be found by tectonic during LaTeX compilation.
+fn prepare_finding_images(
+    findings: &[Finding],
+    pog: &PogDir,
+    work_dir: &Path,
+) -> Result<()> {
+    for f in findings {
+        for img_path in &f.images {
+            let basename = Path::new(img_path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("image");
+            let src = pog.finding_dir(&f.asset, &f.hex_id, &f.slug).join(img_path);
+            let dest_name = format!("{}-{}", f.slug, basename);
+            let dest = work_dir.join(&dest_name);
+            if src.exists() {
+                fs::copy(&src, &dest)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Rewrite markdown image references in a finding description so that the
+/// basenames match the files copied into the work directory by
+/// [`prepare_finding_images`].
+fn rewrite_description_images(desc: &str, images: &[String], slug: &str) -> String {
+    if images.is_empty() {
+        return desc.to_string();
+    }
+
+    let mut result = String::with_capacity(desc.len());
+    let mut remaining = desc;
+
+    while let Some(pos) = remaining.find("![") {
+        result.push_str(&remaining[..pos]);
+        remaining = &remaining[pos..];
+
+        if let Some((alt, path, consumed)) = parse_md_image(remaining) {
+            let basename = path
+                .rsplit('/')
+                .next()
+                .and_then(|s| s.rsplit('\\').next())
+                .unwrap_or(&path);
+
+            let matched = images.iter().any(|img| {
+                let img_base = img.rsplit('/').next().unwrap_or(img);
+                img_base == basename
+            });
+
+            if matched {
+                let new_name = format!("{slug}-{basename}");
+                result.push_str(&format!("![{alt}]({new_name})"));
+                remaining = &remaining[consumed..];
+                continue;
+            }
+        }
+
+        // Could not parse or no match – emit "![" verbatim and continue
+        result.push_str("![");
+        remaining = &remaining[2..];
+    }
+
+    result.push_str(remaining);
+    result
+}
+
+/// Try to parse `![alt](path)` from the start of `s`.
+/// Returns `(alt, path, total_bytes_consumed)`.
+fn parse_md_image(s: &str) -> Option<(String, String, usize)> {
+    if !s.starts_with("![") {
+        return None;
+    }
+    let after = &s[2..];
+    let close_bracket = after.find(']')?;
+    let alt = after[..close_bracket].to_string();
+    let rest = &after[close_bracket + 1..];
+    if !rest.starts_with('(') {
+        return None;
+    }
+    let close_paren = rest[1..].find(')')?;
+    let path = rest[1..1 + close_paren].to_string();
+    let consumed = 2 + close_bracket + 1 + 1 + close_paren + 1;
+    Some((alt, path, consumed))
+}
+
+/// Resolve `Block::Image` paths relative to the template directory and copy
+/// the referenced files into the work directory so tectonic can find them.
+fn resolve_block_images(blocks: &mut Vec<Block>, template_dir: &Path, work_dir: &Path) {
+    for block in blocks.iter_mut() {
+        if let Block::Image(_, path) = block {
+            let src = template_dir.join(path.as_str());
+            if src.exists() {
+                if let Some(basename) = src.file_name().and_then(|n| n.to_str()) {
+                    let dest = work_dir.join(basename);
+                    let _ = fs::copy(&src, &dest);
+                    *path = basename.to_string();
+                }
+            }
+        }
+    }
 }
 
 // ───────────────────────── block model ─────────────────────────
@@ -97,6 +227,8 @@ enum Block {
     Table(Vec<Vec<String>>),
     /// Free-form markdown content.
     Text(String),
+    /// Image: (alt text, resolved file name).
+    Image(String, String),
     /// Auto-generated table of contents.
     Index,
     /// Vertical spacer (millimetres).
@@ -182,8 +314,11 @@ fn parse_blocks(text: &str) -> Vec<Block> {
             } else if rest == "hr" {
                 flush_table(&mut table_rows, &mut blocks);
                 blocks.push(Block::HRule);
+            } else if let Some(arg) = rest.strip_prefix("image ") {
+                flush_table(&mut table_rows, &mut blocks);
+                blocks.push(Block::Image(String::new(), arg.trim().to_string()));
             }
-            // #! comment and #! image are silently ignored
+            // #! comment lines are silently ignored
             continue;
         }
 
@@ -229,6 +364,7 @@ enum MdSpan {
     BoldItalic(String),
     Code(String),
     Link(String, String), // (display, url)
+    Image(String, String), // (alt text, file path)
 }
 
 // ───────────────────────── markdown parser ─────────────────────────
@@ -338,6 +474,17 @@ fn parse_inline_spans(text: &str) -> Vec<MdSpan> {
     };
 
     while i < len {
+        // ── image: ![alt](path) ──
+        if chars[i] == '!'
+            && i + 1 < len
+            && chars[i + 1] == '['
+            && let Some((alt, path, end)) = try_parse_link(&chars, i + 1) {
+                flush_plain(&mut plain, &mut spans);
+                spans.push(MdSpan::Image(alt, path));
+                i = end;
+                continue;
+            }
+
         // ── link: [text](url) ──
         if chars[i] == '['
             && let Some((display, url, end)) = try_parse_link(&chars, i) {
@@ -468,6 +615,7 @@ fn spans_to_plain(spans: &[MdSpan]) -> String {
             | MdSpan::BoldItalic(t)
             | MdSpan::Code(t) => out.push_str(t),
             MdSpan::Link(display, _) => out.push_str(display),
+            MdSpan::Image(alt, _) => out.push_str(alt),
         }
     }
     out
@@ -540,6 +688,14 @@ fn spans_to_latex(spans: &[MdSpan]) -> String {
                 out.push_str("}{");
                 out.push_str(&latex_escape(display));
                 out.push('}');
+            }
+            MdSpan::Image(alt, path) => {
+                out.push_str("\n\n\\begin{center}\n");
+                out.push_str(&format!("\\includegraphics[width=0.9\\linewidth]{{{}}}\\\\[2mm]\n", path));
+                if !alt.is_empty() {
+                    out.push_str(&format!("{{\\small\\color{{CorpGray}}\\textit{{{}}}}}\n", latex_escape(alt)));
+                }
+                out.push_str("\\end{center}\n\n");
             }
         }
     }
@@ -705,6 +861,15 @@ fn blocks_to_latex(blocks: &[Block]) -> String {
                 }
                 body.push_str("\\bottomrule\n\\end{tabularx}\n\\vspace{4mm}\n\n");
             }
+            Block::Image(alt, path) => {
+                after_section = false;
+                body.push_str("\\begin{center}\n");
+                body.push_str(&format!("\\includegraphics[width=0.9\\linewidth]{{{}}}\\\\[2mm]\n", path));
+                if !alt.is_empty() {
+                    body.push_str(&format!("{{\\small\\color{{CorpGray}}\\textit{{{}}}}}\n", latex_escape(alt)));
+                }
+                body.push_str("\\end{center}\n\\vspace{{2mm}}\n\n");
+            }
             Block::Text(t) => {
                 after_section = false;
                 body.push_str(&md_to_latex(t));
@@ -864,10 +1029,51 @@ fn latex_preamble() -> String {
 /// Compile the LaTeX source to PDF using the embedded tectonic engine
 /// and write the result to `output_path`.  No external TeX installation
 /// is required.
-fn render_pdf(latex_src: &str, output_path: &str) -> Result<()> {
-    let pdf_data = tectonic::latex_to_pdf(latex_src).map_err(|e| {
+fn render_pdf(latex_src: &str, output_path: &str, work_dir: &Path) -> Result<()> {
+    use tectonic::config::PersistentConfig;
+    use tectonic::driver::{OutputFormat, ProcessingSessionBuilder};
+    use tectonic::status::NoopStatusBackend;
+
+    let mut status = NoopStatusBackend::default();
+
+    let config = PersistentConfig::open(false).map_err(|e| {
+        StorageError::ParseError(format!("tectonic configuration error: {e}"))
+    })?;
+
+    let bundle = config.default_bundle(false, &mut status).map_err(|e| {
+        StorageError::ParseError(format!("tectonic bundle error: {e}"))
+    })?;
+
+    let format_cache_path = config.format_cache_path().map_err(|e| {
+        StorageError::ParseError(format!("tectonic format cache error: {e}"))
+    })?;
+
+    let mut sb = ProcessingSessionBuilder::default();
+    sb.bundle(bundle)
+        .primary_input_buffer(latex_src.as_bytes())
+        .tex_input_name("texput.tex")
+        .format_name("latex")
+        .format_cache_path(format_cache_path)
+        .keep_logs(false)
+        .keep_intermediates(false)
+        .print_stdout(false)
+        .output_format(OutputFormat::Pdf)
+        .filesystem_root(work_dir)
+        .do_not_write_output_files();
+
+    let mut sess = sb.create(&mut status).map_err(|e| {
         StorageError::ParseError(format!("tectonic LaTeX compilation failed: {e}"))
     })?;
+
+    sess.run(&mut status).map_err(|e| {
+        StorageError::ParseError(format!("tectonic LaTeX compilation failed: {e}"))
+    })?;
+
+    let mut files = sess.into_file_data();
+    let pdf_data = files
+        .remove("texput.pdf")
+        .ok_or_else(|| StorageError::ParseError("tectonic: no PDF output produced".into()))?
+        .data;
 
     // Ensure output directory exists
     if let Some(parent) = Path::new(output_path).parent() {
@@ -1045,6 +1251,12 @@ mod tests {
     }
 
     #[test]
+    fn parse_blocks_image() {
+        let blocks = parse_blocks("#! image logo.png");
+        assert_eq!(blocks, vec![Block::Image(String::new(), "logo.png".into())]);
+    }
+
+    #[test]
     fn parse_blocks_plain_text() {
         let blocks = parse_blocks("Hello world.");
         assert_eq!(blocks, vec![Block::Text("Hello world.".into())]);
@@ -1134,6 +1346,29 @@ Some text here.
             spans[1],
             MdSpan::Link("docs".into(), "https://example.com".into())
         );
+    }
+
+    #[test]
+    fn spans_image() {
+        let spans = parse_inline_spans("![screenshot](proof.png)");
+        assert_eq!(spans, vec![MdSpan::Image("screenshot".into(), "proof.png".into())]);
+    }
+
+    #[test]
+    fn spans_image_with_text() {
+        let spans = parse_inline_spans("see ![proof](img.jpg) here");
+        assert_eq!(spans.len(), 3);
+        assert_eq!(spans[0], MdSpan::Plain("see ".into()));
+        assert_eq!(spans[1], MdSpan::Image("proof".into(), "img.jpg".into()));
+        assert_eq!(spans[2], MdSpan::Plain(" here".into()));
+    }
+
+    #[test]
+    fn spans_image_not_confused_with_link() {
+        // Ensure ![...] is parsed as image, not "!" + link
+        let spans = parse_inline_spans("![alt](path.png)");
+        assert_eq!(spans.len(), 1);
+        assert!(matches!(&spans[0], MdSpan::Image(_, _)));
     }
 
     #[test]
@@ -1251,6 +1486,15 @@ Some text here.
     }
 
     #[test]
+    fn spans_to_latex_image() {
+        let spans = vec![MdSpan::Image("proof".into(), "proof.png".into())];
+        let latex = spans_to_latex(&spans);
+        assert!(latex.contains(r"\includegraphics"));
+        assert!(latex.contains("proof.png"));
+        assert!(latex.contains("proof")); // alt text
+    }
+
+    #[test]
     fn spans_to_latex_escapes_special() {
         let spans = vec![MdSpan::Plain("a & b".into())];
         assert_eq!(spans_to_latex(&spans), r"a \& b");
@@ -1300,6 +1544,47 @@ Some text here.
         assert!(result.contains(r"\textbf{bold}"));
         assert!(result.contains(r"\textit{italic}"));
         assert!(result.contains(r"\code{code}"));
+    }
+
+    #[test]
+    fn md_to_latex_image() {
+        let result = md_to_latex("See below:\n\n![proof screenshot](proof.png)");
+        assert!(result.contains(r"\includegraphics"));
+        assert!(result.contains("proof.png"));
+    }
+
+    // ── rewrite_description_images ──
+
+    #[test]
+    fn rewrite_images_no_images() {
+        let desc = "No images here.";
+        assert_eq!(rewrite_description_images(desc, &[], "slug"), "No images here.");
+    }
+
+    #[test]
+    fn rewrite_images_matching_basename() {
+        let desc = "See ![proof](../img/xss.jpg) for details.";
+        let images = vec!["img/xss.jpg".to_string()];
+        let result = rewrite_description_images(desc, &images, "stored-xss");
+        assert_eq!(result, "See ![proof](stored-xss-xss.jpg) for details.");
+    }
+
+    #[test]
+    fn rewrite_images_no_match() {
+        let desc = "See ![proof](../img/other.jpg) for details.";
+        let images = vec!["img/xss.jpg".to_string()];
+        let result = rewrite_description_images(desc, &images, "stored-xss");
+        // No match: original path is preserved
+        assert_eq!(result, "See ![proof](../img/other.jpg) for details.");
+    }
+
+    #[test]
+    fn rewrite_images_multiple() {
+        let desc = "![a](img/one.png) and ![b](img/two.png)";
+        let images = vec!["img/one.png".to_string(), "img/two.png".to_string()];
+        let result = rewrite_description_images(desc, &images, "vuln");
+        assert!(result.contains("vuln-one.png"));
+        assert!(result.contains("vuln-two.png"));
     }
 
     // ── blocks_to_latex ──
@@ -1362,6 +1647,14 @@ Some text here.
     fn btl_text_markdown() {
         let latex = blocks_to_latex(&[Block::Text("**bold** text".into())]);
         assert!(latex.contains(r"\textbf{bold}"));
+    }
+
+    #[test]
+    fn btl_image() {
+        let latex = blocks_to_latex(&[Block::Image("screenshot".into(), "proof.png".into())]);
+        assert!(latex.contains(r"\includegraphics"));
+        assert!(latex.contains("proof.png"));
+        assert!(latex.contains("screenshot"));
     }
 
     #[test]
@@ -1609,7 +1902,8 @@ Reflected XSS in the `search` parameter.
     #[test]
     fn render_pdf_with_empty_latex_handles_error() {
         // Empty input is not valid LaTeX — tectonic should return an error.
-        let result = render_pdf("", "/tmp/pog_test_nonexistent.pdf");
+        let tmp = tempfile::tempdir().unwrap();
+        let result = render_pdf("", "/tmp/pog_test_nonexistent.pdf", tmp.path());
         assert!(result.is_err());
     }
 }

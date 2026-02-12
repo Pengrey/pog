@@ -15,7 +15,7 @@
      #! index                      Auto-generated TOC with page numbers & bookmarks
      #! spacer <mm>                Explicit vertical spacing
      #! comment <text>             Template-only note (not rendered in PDF)
-     #! image <path>               Reserved – future logo / image support
+     #! image <path>               Include an image (path relative to template)
      #! pagebreak                  Force a new page
      #! hr                         Horizontal rule
      (plain text)                  Markdown-aware paragraph — supports:
@@ -32,7 +32,7 @@
      total, critical, high, medium, low, info – counts
 
    Each finding: num, title, severity, asset, date, location,
-                 description, status
+                 description, status, images
    ═══════════════════════════════════════════════════════════════════════ #}
 
 {# ─────────────────────────────────────────────────────────────────────
@@ -40,10 +40,6 @@
    ───────────────────────────────────────────────────────────────────── #}
 
 #! title Security Assessment Report
-
-#! comment TODO: Add company logo here once image support is implemented
-#! comment       #! image ./assets/company_logo.png
-#! comment       The logo will appear at the top of the cover page.
 
 #! subtitle {{ asset }}
 
