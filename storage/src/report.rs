@@ -38,6 +38,13 @@ pub fn generate_report(
 
     // ── build MiniJinja context ──
     let mut env = minijinja::Environment::new();
+
+    // Register a `latex` filter so templates can safely embed variables
+    // inside `#! latex` blocks:  {{ asset|latex }}
+    env.add_filter("latex", |value: String| -> String {
+        latex_escape(&value)
+    });
+
     env.add_template("report", &raw)
         .map_err(|e| StorageError::ParseError(e.to_string()))?;
     let tmpl = env
@@ -97,9 +104,9 @@ pub fn generate_report(
         .map_err(|e| StorageError::ParseError(e.to_string()))?;
 
     // ── parse blocks and render via LaTeX ──
-    let mut blocks = parse_blocks(&rendered);
-    resolve_block_images(&mut blocks, template_dir, work_dir.path());
-    let latex_src = blocks_to_latex(&blocks);
+    let blocks = parse_blocks(&rendered);
+    copy_template_assets(template_dir, work_dir.path())?;
+    let latex_src = blocks_to_latex(&blocks, asset);
     render_pdf(&latex_src, output_path, work_dir.path())?;
 
     Ok(())
@@ -194,21 +201,34 @@ fn parse_md_image(s: &str) -> Option<(String, String, usize)> {
     Some((alt, path, consumed))
 }
 
-/// Resolve `Block::Image` paths relative to the template directory and copy
-/// the referenced files into the work directory so tectonic can find them.
-fn resolve_block_images(blocks: &mut Vec<Block>, template_dir: &Path, work_dir: &Path) {
-    for block in blocks.iter_mut() {
-        if let Block::Image(_, path) = block {
-            let src = template_dir.join(path.as_str());
-            if src.exists() {
-                if let Some(basename) = src.file_name().and_then(|n| n.to_str()) {
-                    let dest = work_dir.join(basename);
-                    let _ = fs::copy(&src, &dest);
-                    *path = basename.to_string();
+/// Copy all files from the template directory into the work directory,
+/// preserving relative paths so that template assets (images, styles, etc.)
+/// are available during LaTeX compilation.  This makes templates fully
+/// self-contained — they can reference their own images via raw LaTeX
+/// without the program needing to know about them.
+fn copy_template_assets(template_dir: &Path, work_dir: &Path) -> Result<()> {
+    fn walk(root: &Path, dir: &Path, dest: &Path) -> std::io::Result<()> {
+        if !dir.is_dir() {
+            return Ok(());
+        }
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            let rel = path.strip_prefix(root).unwrap_or(&path);
+            let target = dest.join(rel);
+            if path.is_dir() {
+                fs::create_dir_all(&target)?;
+                walk(root, &path, dest)?;
+            } else {
+                if let Some(parent) = target.parent() {
+                    fs::create_dir_all(parent)?;
                 }
+                let _ = fs::copy(&path, &target);
             }
         }
+        Ok(())
     }
+    Ok(walk(template_dir, template_dir, work_dir)?)
 }
 
 // ───────────────────────── block model ─────────────────────────
@@ -227,8 +247,8 @@ enum Block {
     Table(Vec<Vec<String>>),
     /// Free-form markdown content.
     Text(String),
-    /// Image: (alt text, resolved file name).
-    Image(String, String),
+    /// Raw LaTeX passthrough — inserted verbatim into the document.
+    Latex(String),
     /// Auto-generated table of contents.
     Index,
     /// Vertical spacer (millimetres).
@@ -244,6 +264,8 @@ fn parse_blocks(text: &str) -> Vec<Block> {
     let mut blocks: Vec<Block> = Vec::new();
     let mut table_rows: Vec<Vec<String>> = Vec::new();
     let mut text_buf = String::new();
+    let mut in_latex = false;
+    let mut latex_buf = String::new();
 
     let flush_text = |buf: &mut String, out: &mut Vec<Block>| {
         let trimmed = buf.trim().to_string();
@@ -261,6 +283,23 @@ fn parse_blocks(text: &str) -> Vec<Block> {
 
     for line in text.lines() {
         let trimmed = line.trim();
+
+        // ── raw LaTeX block: collect lines verbatim until #! endlatex ──
+        if in_latex {
+            if trimmed == "#! endlatex" {
+                if !latex_buf.is_empty() {
+                    blocks.push(Block::Latex(latex_buf.trim_end().to_string()));
+                }
+                latex_buf.clear();
+                in_latex = false;
+            } else {
+                if !latex_buf.is_empty() {
+                    latex_buf.push('\n');
+                }
+                latex_buf.push_str(line);
+            }
+            continue;
+        }
 
         // Blank lines between text paragraphs get preserved inside the
         // text buffer as empty lines.
@@ -314,9 +353,13 @@ fn parse_blocks(text: &str) -> Vec<Block> {
             } else if rest == "hr" {
                 flush_table(&mut table_rows, &mut blocks);
                 blocks.push(Block::HRule);
-            } else if let Some(arg) = rest.strip_prefix("image ") {
+            } else if rest == "latex" {
                 flush_table(&mut table_rows, &mut blocks);
-                blocks.push(Block::Image(String::new(), arg.trim().to_string()));
+                in_latex = true;
+                latex_buf.clear();
+            } else if let Some(arg) = rest.strip_prefix("latex ") {
+                flush_table(&mut table_rows, &mut blocks);
+                blocks.push(Block::Latex(arg.to_string()));
             }
             // #! comment lines are silently ignored
             continue;
@@ -691,10 +734,12 @@ fn spans_to_latex(spans: &[MdSpan]) -> String {
             }
             MdSpan::Image(alt, path) => {
                 out.push_str("\n\n\\begin{center}\n");
+                out.push_str(&format!("\\IfFileExists{{{}}}{{", path));
                 out.push_str(&format!("\\includegraphics[width=0.9\\linewidth]{{{}}}\\\\[2mm]\n", path));
                 if !alt.is_empty() {
                     out.push_str(&format!("{{\\small\\color{{CorpGray}}\\textit{{{}}}}}\n", latex_escape(alt)));
                 }
+                out.push_str("}{}");
                 out.push_str("\\end{center}\n\n");
             }
         }
@@ -760,7 +805,7 @@ fn md_to_latex(text: &str) -> String {
 // ───────────────────────── blocks → LaTeX document ─────────────────────────
 
 /// Convert the parsed blocks into a complete LaTeX document string.
-fn blocks_to_latex(blocks: &[Block]) -> String {
+fn blocks_to_latex(blocks: &[Block], asset: &str) -> String {
     let mut body = String::new();
     let mut after_section = false;
 
@@ -861,14 +906,10 @@ fn blocks_to_latex(blocks: &[Block]) -> String {
                 }
                 body.push_str("\\bottomrule\n\\end{tabularx}\n\\vspace{4mm}\n\n");
             }
-            Block::Image(alt, path) => {
+            Block::Latex(raw) => {
                 after_section = false;
-                body.push_str("\\begin{center}\n");
-                body.push_str(&format!("\\includegraphics[width=0.9\\linewidth]{{{}}}\\\\[2mm]\n", path));
-                if !alt.is_empty() {
-                    body.push_str(&format!("{{\\small\\color{{CorpGray}}\\textit{{{}}}}}\n", latex_escape(alt)));
-                }
-                body.push_str("\\end{center}\n\\vspace{{2mm}}\n\n");
+                body.push_str(raw);
+                body.push_str("\n\n");
             }
             Block::Text(t) => {
                 after_section = false;
@@ -891,14 +932,15 @@ fn blocks_to_latex(blocks: &[Block]) -> String {
 
     format!(
         "{PREAMBLE}\n\\begin{{document}}\n\n{body}\\end{{document}}\n",
-        PREAMBLE = latex_preamble(),
+        PREAMBLE = latex_preamble(asset),
         body = body,
     )
 }
 
 /// The LaTeX preamble: document class, packages, colour definitions, and
 /// style settings that produce a professional-looking security report.
-fn latex_preamble() -> String {
+fn latex_preamble(asset: &str) -> String {
+    let escaped_asset = latex_escape(asset);
     r#"\documentclass[11pt,a4paper]{article}
 
 % ── geometry ──
@@ -1016,12 +1058,12 @@ fn latex_preamble() -> String {
 \fancyhf{}
 \renewcommand{\headrulewidth}{0.4pt}
 \renewcommand{\headrule}{\hbox to\headwidth{\color{CorpRule}\leaders\hrule height \headrulewidth\hfill}}
-\fancyhead[L]{\small\color{CorpGray}\textit{Security Assessment Report}}
+\fancyhead[L]{\small\color{CorpGray}\textit{Security Assessment Report -- %%ASSET%%}}
 \fancyhead[R]{\small\color{CorpGray}\thepage}
-\fancyfoot[C]{\small\color{CorpGray}\textit{Confidential}}
+\fancyfoot[C]{}
 \renewcommand{\footrulewidth}{0pt}
 "#
-    .to_string()
+    .replace("%%ASSET%%", &escaped_asset)
 }
 
 // ───────────────────────── PDF compilation ─────────────────────────
@@ -1251,9 +1293,16 @@ mod tests {
     }
 
     #[test]
-    fn parse_blocks_image() {
-        let blocks = parse_blocks("#! image logo.png");
-        assert_eq!(blocks, vec![Block::Image(String::new(), "logo.png".into())]);
+    fn parse_blocks_latex_inline() {
+        let blocks = parse_blocks("#! latex \\vspace{20mm}");
+        assert_eq!(blocks, vec![Block::Latex("\\vspace{20mm}".into())]);
+    }
+
+    #[test]
+    fn parse_blocks_latex_block() {
+        let input = "#! latex\n\\begin{center}\n\\includegraphics{logo.png}\n\\end{center}\n#! endlatex";
+        let blocks = parse_blocks(input);
+        assert_eq!(blocks, vec![Block::Latex("\\begin{center}\n\\includegraphics{logo.png}\n\\end{center}".into())]);
     }
 
     #[test]
@@ -1591,32 +1640,32 @@ Some text here.
 
     #[test]
     fn btl_title() {
-        let latex = blocks_to_latex(&[Block::Title("My Report".into())]);
+        let latex = blocks_to_latex(&[Block::Title("My Report".into())], "test");
         assert!(latex.contains("My Report"));
     }
 
     #[test]
     fn btl_subtitle() {
-        let latex = blocks_to_latex(&[Block::Subtitle("acme.corp".into())]);
+        let latex = blocks_to_latex(&[Block::Subtitle("acme.corp".into())], "test");
         assert!(latex.contains("acme.corp"));
     }
 
     #[test]
     fn btl_section() {
-        let latex = blocks_to_latex(&[Block::Section("Details".into())]);
+        let latex = blocks_to_latex(&[Block::Section("Details".into())], "test");
         assert!(latex.contains(r"\section{Details}"));
     }
 
     #[test]
     fn btl_finding() {
-        let latex = blocks_to_latex(&[Block::Finding("Critical".into(), "SQLi".into())]);
+        let latex = blocks_to_latex(&[Block::Finding("Critical".into(), "SQLi".into())], "test");
         assert!(latex.contains("SQLi"));
         assert!(latex.contains("Critical"));
     }
 
     #[test]
     fn btl_meta() {
-        let latex = blocks_to_latex(&[Block::Meta("Asset".into(), "web.corp".into())]);
+        let latex = blocks_to_latex(&[Block::Meta("Asset".into(), "web.corp".into())], "test");
         assert!(latex.contains("Asset"));
         assert!(latex.contains("web.corp"));
     }
@@ -1627,7 +1676,7 @@ Some text here.
             vec!["A".into(), "B".into()],
             vec!["1".into(), "2".into()],
         ];
-        let latex = blocks_to_latex(&[Block::Table(rows)]);
+        let latex = blocks_to_latex(&[Block::Table(rows)], "test");
         assert!(latex.contains(r"\begin{tabularx}"));
         assert!(latex.contains("1 & 2"));
     }
@@ -1638,52 +1687,51 @@ Some text here.
             vec!["A".into(), "B".into(), "C".into()],
             vec!["1".into(), "2".into(), "3".into()],
         ];
-        let latex = blocks_to_latex(&[Block::Table(rows)]);
+        let latex = blocks_to_latex(&[Block::Table(rows)], "test");
         assert!(latex.contains(r"\begin{tabularx}"));
         assert!(latex.contains("1 & 2 & 3"));
     }
 
     #[test]
     fn btl_text_markdown() {
-        let latex = blocks_to_latex(&[Block::Text("**bold** text".into())]);
+        let latex = blocks_to_latex(&[Block::Text("**bold** text".into())], "test");
         assert!(latex.contains(r"\textbf{bold}"));
     }
 
     #[test]
-    fn btl_image() {
-        let latex = blocks_to_latex(&[Block::Image("screenshot".into(), "proof.png".into())]);
-        assert!(latex.contains(r"\includegraphics"));
-        assert!(latex.contains("proof.png"));
-        assert!(latex.contains("screenshot"));
+    fn btl_latex() {
+        let latex = blocks_to_latex(&[Block::Latex("\\begin{center}\n\\includegraphics{proof.png}\n\\end{center}".into())], "test");
+        assert!(latex.contains(r"\includegraphics{proof.png}"));
+        assert!(latex.contains(r"\begin{center}"));
     }
 
     #[test]
     fn btl_index() {
-        let latex = blocks_to_latex(&[Block::Index]);
+        let latex = blocks_to_latex(&[Block::Index], "test");
         assert!(latex.contains(r"\tableofcontents"));
     }
 
     #[test]
     fn btl_spacer() {
-        let latex = blocks_to_latex(&[Block::Spacer(10.0)]);
+        let latex = blocks_to_latex(&[Block::Spacer(10.0)], "test");
         assert!(latex.contains(r"\vspace{10mm}"));
     }
 
     #[test]
     fn btl_pagebreak() {
-        let latex = blocks_to_latex(&[Block::PageBreak]);
+        let latex = blocks_to_latex(&[Block::PageBreak], "test");
         assert!(latex.contains(r"\clearpage"));
     }
 
     #[test]
     fn btl_hrule() {
-        let latex = blocks_to_latex(&[Block::HRule]);
+        let latex = blocks_to_latex(&[Block::HRule], "test");
         assert!(latex.contains(r"\rule"));
     }
 
     #[test]
     fn btl_full_document_structure() {
-        let latex = blocks_to_latex(&[Block::Title("T".into())]);
+        let latex = blocks_to_latex(&[Block::Title("T".into())], "test");
         assert!(latex.contains(r"\documentclass"));
         assert!(latex.contains(r"\begin{document}"));
         assert!(latex.contains(r"\end{document}"));
@@ -1795,7 +1843,7 @@ Some text here.
             Block::Text("Description with `code` and **bold**.".into()),
             Block::HRule,
         ];
-        let latex = blocks_to_latex(&blocks);
+        let latex = blocks_to_latex(&blocks, "test");
 
         // Verify document structure
         assert!(latex.contains(r"\documentclass"));
@@ -1839,7 +1887,7 @@ Reflected XSS in the `search` parameter.
 #! hr
 ";
         let blocks = parse_blocks(input);
-        let latex = blocks_to_latex(&blocks);
+        let latex = blocks_to_latex(&blocks, "test");
 
         assert!(latex.contains(r"\documentclass"));
         assert!(latex.contains("Test Report"));
@@ -1866,7 +1914,7 @@ Reflected XSS in the `search` parameter.
             Block::Text("Some text.".into()),
             Block::Finding("High".into(), "1. Test".into()),
         ];
-        let latex = blocks_to_latex(&blocks);
+        let latex = blocks_to_latex(&blocks, "test");
         let finding_pos = latex.find("1. Test").unwrap();
         let clearpage_before = latex[..finding_pos].rfind(r"\clearpage");
         assert!(clearpage_before.is_some());
@@ -1878,7 +1926,7 @@ Reflected XSS in the `search` parameter.
             Block::Section("Detailed Findings".into()),
             Block::Finding("High".into(), "1. Test".into()),
         ];
-        let latex = blocks_to_latex(&blocks);
+        let latex = blocks_to_latex(&blocks, "test");
         let section_pos = latex.find(r"\section{Detailed Findings}").unwrap();
         let finding_pos = latex.find("1. Test").unwrap();
         let between = &latex[section_pos..finding_pos];
@@ -1892,7 +1940,7 @@ Reflected XSS in the `search` parameter.
             Block::Text("Description.".into()),
             Block::Finding("High".into(), "2. Second".into()),
         ];
-        let latex = blocks_to_latex(&blocks);
+        let latex = blocks_to_latex(&blocks, "test");
         let clearpage_count = latex.matches(r"\clearpage").count();
         assert!(clearpage_count >= 2);
     }

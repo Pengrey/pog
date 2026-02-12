@@ -19,7 +19,7 @@ Findings and assets are plain **Markdown files**. Use `pog` to import, search an
 | **Asset management** | Track assets with metadata: name, description, contact, criticality, DNS/IP. |
 | **Asset-based organisation** | Findings grouped by target asset with unique hex IDs. |
 | **Interactive TUI** | Tabbed dashboard (Graph, Search, Assets) with keyboard & mouse. |
-| **PDF reports** | Template-driven PDF reports via embedded [tectonic](https://tectonic-typesetting.github.io/) engine – no external LaTeX install needed. |
+| **PDF reports** | Self-contained template-driven PDF reports via embedded [tectonic](https://tectonic-typesetting.github.io/) engine – no external LaTeX install needed. Templates own their styling, images and layout; the program fills in findings and metadata. |
 | **CSV export** | One-command export of all findings. |
 | **Bulk import** | Batch-import findings or assets in one go. |
 | **Upsert on re-import** | Re-importing a finding (same slug) updates the existing record. |
@@ -162,6 +162,8 @@ pog export --from 2025/09/01 --to 2026/01/31                       # date range 
 
 Generate a PDF report from findings using a [MiniJinja](https://docs.rs/minijinja) template and the [tectonic](https://tectonic-typesetting.github.io) embedded TeX engine (no external LaTeX installation required).
 
+Templates are **self-contained** – they own their styling, cover-page images and layout. Place assets (images, logos, etc.) alongside the template file and reference them via raw LaTeX. The entire template directory is copied into the build context so all relative paths resolve correctly.
+
 ```
 pog report -t template.tmpl --asset nexus_portal --from 2025/09/01 --to 2026/01/31
 ```
@@ -189,13 +191,38 @@ pog report -t template.tmpl --asset nexus_portal --from 2025/09/01 --to 2026/01/
 | `#! pagebreak` | Page break |
 | `#! hr` | Horizontal rule |
 | `#! comment <text>` | Template-only note (not rendered in PDF) |
-| `#! image <path>` | Reserved – future logo / image support |
+| `#! latex <raw>` | Raw LaTeX passthrough (single-line) |
+| `#! latex` … `#! endlatex` | Multi-line raw LaTeX block |
 
-Plain text between directives is rendered as Markdown-aware paragraphs supporting **bold**, *italic*, `inline code`, `` ```fenced code blocks``` ``, `[link text](url)`, `# headings` and `- bullet lists`.
+Plain text between directives is rendered as Markdown-aware paragraphs supporting **bold**, *italic*, `inline code`, `` ```fenced code blocks``` ``, `[link text](url)`, `![images](path)`, `# headings` and `- bullet lists`.
+
+#### Template filters
+
+| Filter | Usage | Description |
+|--------|-------|-------------|
+| `latex` | `{{ var\|latex }}` | Escapes LaTeX special characters (`_`, `&`, `%`, `$`, `#`, `{`, `}`, `~`, `^`, `\`) |
+
+Use the `latex` filter for any variable inside `#! latex` blocks. Variables in plain text blocks are escaped automatically.
 
 **Template variables:** `findings`, `date`, `asset`, `from`, `to`, `total`, `critical`, `high`, `medium`, `low`, `info`.
 
-See [`examples/report_template_example/template.tmpl`](examples/report_template_example/template.tmpl) for a complete working template.
+**Page header / footer:** every page (except the cover) shows *"Security Assessment Report – {asset}"* in the header with a page number on the right. The footer is empty.
+
+**Example templates:**
+
+- [`examples/report_template_example/template.tmpl`](examples/report_template_example/template.tmpl) – minimal working template
+
+#### Template directory structure
+
+Place images and other assets alongside the template file:
+
+```
+my_template/
+├── template.tmpl        # the template
+└── img/
+    ├── banner.png       # referenced via \includegraphics{img/banner.png}
+    └── logo.png         # referenced via \includegraphics{img/logo.png}
+```
 
 ### `pog update-status`
 

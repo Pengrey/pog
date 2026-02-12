@@ -15,7 +15,9 @@
      #! index                      Auto-generated TOC with page numbers & bookmarks
      #! spacer <mm>                Explicit vertical spacing
      #! comment <text>             Template-only note (not rendered in PDF)
-     #! image <path>               Include an image (path relative to template)
+     #! latex <raw LaTeX>           Single-line raw LaTeX passthrough
+     #! latex ... #! endlatex       Multi-line raw LaTeX block
+                                     Use {{ var|latex }} to escape special chars
      #! pagebreak                  Force a new page
      #! hr                         Horizontal rule
      (plain text)                  Markdown-aware paragraph — supports:
@@ -197,8 +199,8 @@ No critical or high severity findings were identified. Nonetheless, all findings
 
 #! spacer 6
 
-#! comment TODO: Add company logo / signature block once image support is implemented
-#! comment       #! image ./assets/signature.png
+#! comment TODO: Add company logo / signature block via raw LaTeX:
+#! comment       #! latex \includegraphics[width=3cm]{assets/signature.png}
 
 #! hr
 
