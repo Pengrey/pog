@@ -4,7 +4,7 @@ use std::process;
 #[macro_use]
 mod log;
 
-use cli::{parse_args, Commands};
+use cli::{parse_args, ClientAction, Commands};
 use models::{GraphData, Severity, SeverityBar};
 use storage::PogDir;
 
@@ -18,10 +18,19 @@ fn main() {
 fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let args = parse_args();
 
-    // Initialise POGDIR (creates dirs + DB on first run).
-    let pog = PogDir::init()?;
+    // ---- Handle client-management commands (no PogDir needed) --------
+    if let Commands::Client { action } = args.command {
+        return handle_client_action(action);
+    }
+
+    // ---- Resolve the client and initialise its POGDIR ----------------
+    let client_name = PogDir::resolve_client(args.client.as_deref())?;
+    let pog = PogDir::init_for_client(&client_name)?;
 
     match args.command {
+        // (Client was already handled above.)
+        Commands::Client { .. } => unreachable!(),
+
         Commands::ImportFindings { path, bulk } => {
             let folder = Path::new(&path);
             if bulk {
@@ -128,6 +137,47 @@ fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    Ok(())
+}
+
+/// Handle `pog client <action>` sub-commands.
+fn handle_client_action(action: ClientAction) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    match action {
+        ClientAction::Create { name } => {
+            PogDir::create_client(&name)?;
+            success!("Created client: {}", name);
+        }
+        ClientAction::List => {
+            let clients = PogDir::list_clients()?;
+            let default = PogDir::get_default_client().ok();
+            if clients.is_empty() {
+                info!("No clients yet. Create one with `pog client create <name>`.");
+            } else {
+                for c in &clients {
+                    if default.as_deref() == Some(c.as_str()) {
+                        info!("{} (default)", c);
+                    } else {
+                        info!("{}", c);
+                    }
+                }
+            }
+        }
+        ClientAction::Delete { name } => {
+            PogDir::delete_client(&name)?;
+            success!("Deleted client: {}", name);
+        }
+        ClientAction::Default { name } => {
+            if let Some(name) = name {
+                PogDir::set_default_client(&name)?;
+                success!("Default client set to: {}", name);
+            } else {
+                match PogDir::get_default_client() {
+                    Ok(current) => info!("Current default client: {}", current),
+                    Err(_) => info!("No default client set. Use `pog client default <name>`."),
+                }
+            }
+        }
+    }
     Ok(())
 }
 

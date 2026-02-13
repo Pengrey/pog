@@ -5,6 +5,10 @@ use clap::{Parser, Subcommand};
 #[command(version)]
 #[command(author = "Pengrey")]
 pub struct Cli {
+    /// Client / project name (overrides the default client)
+    #[arg(short, long, global = true)]
+    pub client: Option<String>,
+
     /// the command to execute
     #[command(subcommand)]
     pub command: Commands,
@@ -95,6 +99,37 @@ pub enum Commands {
         /// End date for the date range (YYYY/MM/DD)
         #[arg(long)]
         to: Option<String>,
+    },
+
+    /// Manage clients (each client gets its own DB and findings)
+    Client {
+        #[command(subcommand)]
+        action: ClientAction,
+    },
+}
+
+/// Sub-commands for `pog client …`
+#[derive(Subcommand)]
+pub enum ClientAction {
+    /// Create a new client
+    Create {
+        /// Client name (used as directory name)
+        name: String,
+    },
+
+    /// List all clients
+    List,
+
+    /// Delete a client and all its data
+    Delete {
+        /// Client name to delete
+        name: String,
+    },
+
+    /// Set or show the default client
+    Default {
+        /// Client name to set as default (omit to show current default)
+        name: Option<String>,
     },
 }
 

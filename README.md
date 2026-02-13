@@ -22,6 +22,7 @@ Findings and assets are plain **Markdown files**. Use `pog` to import, search an
 | **PDF reports** | Self-contained template-driven PDF reports via embedded [tectonic](https://tectonic-typesetting.github.io/) engine – no external LaTeX install needed. Templates own their styling, images and layout; the program fills in findings and metadata. |
 | **CSV export** | One-command export of all findings. |
 | **Bulk import** | Batch-import findings or assets in one go. |
+| **Multi-client** | Each client gets its own isolated DB and findings directory. Switch with `--client` or set a default. |
 | **Upsert on re-import** | Re-importing a finding (same slug) updates the existing record. |
 | **Sample data** | TUI shows demo findings & assets when the database is empty. |
 | **Zero config** | Data lives in `~/.pog` (or `$POGDIR`). |
@@ -35,9 +36,16 @@ Findings and assets are plain **Markdown files**. Use `pog` to import, search an
 make pod-build    # first time only
 make release      # compile & strip
 
-# Import findings
+# Client management
+pog client create acme-corp
+pog client create globex
+pog client default acme-corp
+pog client list
+
+# Import findings (uses default client, or override with -c)
 pog import-findings -p ./sql-injection
 pog import-findings -p ./examples/findings_example --bulk
+pog -c globex import-findings -p ./findings --bulk   # target a specific client
 
 # Import assets
 pog import-assets -p ./asset.md
@@ -50,13 +58,50 @@ pog view
 pog export -o findings.csv -a nexus_portal --from 2025/09/01 --to 2026/01/31
 pog report -t template.tmpl --asset nexus_portal --from 2025/09/01 --to 2026/01/31
 
-# Wipe everything
+# Wipe current client's data
 pog clean
 ```
 
 ---
 
+## Global flags
+
+| Flag | Description |
+|------|-------------|
+| `-c`, `--client <name>` | Target a specific client. Overrides the default set by `pog client default`. |
+
+All data-bearing commands (`import-findings`, `import-assets`, `view`, `export`, `report`, `update-status`, `clean`) respect this flag. If omitted, the current default client is used.
+
+---
+
 ## Commands
+
+### `pog client`
+
+Manage clients. Each client gets its own isolated `pog.db` and `findings/` directory.
+
+```
+pog client create <name>      # create a new client
+pog client list               # list all clients
+pog client default <name>     # set the default client
+pog client default            # show the current default
+pog client delete <name>      # delete a client and all its data
+```
+
+```
+$ pog client create acme-corp
+[+] Created client: acme-corp
+
+$ pog client create globex
+[+] Created client: globex
+
+$ pog client default acme-corp
+[+] Default client set to: acme-corp
+
+$ pog client list
+[*] acme-corp (default)
+[*] globex
+```
 
 ### `pog import-findings`
 
@@ -348,32 +393,40 @@ Assets are defined in Markdown files. Only the **name** is required — all othe
 
 ## POGDIR – internal file structure
 
-All data lives under **POGDIR** (`$POGDIR` env var or `$HOME/.pog`):
+All data lives under **POGDIR** (`$POGDIR` env var or `$HOME/.pog`). Each client has its own isolated sub-directory:
 
 ```
 ~/.pog/
-├── pog.db                              # SQLite database (findings + assets)
-└── findings/
-    ├── nexus_portal/
-    │   ├── asset.md                     # asset metadata
-    │   ├── 0x001_sql-injection/
-    │   │   ├── finding.md
-    │   │   └── img/
-    │   │       └── proof.png
-    │   └── 0x002_open-redirect/
-    │       └── finding.md
-    └── orion_gateway/
-        ├── asset.md
-        └── 0x001_weak-tls/
-            └── finding.md
+├── default_client                       # plain-text file with the active client name
+└── clients/
+    ├── acme-corp/
+    │   ├── pog.db                       # SQLite database (findings + assets)
+    │   └── findings/
+    │       ├── nexus_portal/
+    │       │   ├── asset.md
+    │       │   ├── 0x001_sql-injection/
+    │       │   │   ├── finding.md
+    │       │   │   └── img/
+    │       │   │       └── proof.png
+    │       │   └── 0x002_open-redirect/
+    │       │       └── finding.md
+    │       └── orion_gateway/
+    │           ├── asset.md
+    │           └── 0x001_weak-tls/
+    │               └── finding.md
+    └── globex/
+        ├── pog.db
+        └── findings/
+            └── ...
 ```
 
 Asset metadata is stored both in the SQLite database and as an `asset.md` file in each asset directory. You can browse with standard Unix tools:
 
 ```bash
-ls ~/.pog/findings/                        # list assets
-tree ~/.pog/findings/                      # full tree
-grep -rl "SQL" ~/.pog/findings/            # keyword search
+ls ~/.pog/clients/                                   # list clients
+ls ~/.pog/clients/acme-corp/findings/                # list assets for a client
+tree ~/.pog/clients/acme-corp/findings/              # full tree
+grep -rl "SQL" ~/.pog/clients/acme-corp/findings/    # keyword search
 ```
 
 ---

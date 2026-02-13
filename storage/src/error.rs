@@ -17,6 +17,12 @@ pub enum StorageError {
 
     #[error("POGDIR is not set and could not be determined")]
     NoPogDir,
+
+    #[error("no client selected – use --client <name> or set a default with `pog client default <name>`")]
+    NoClientSelected,
+
+    #[error("client not found: {0}")]
+    ClientNotFound(String),
 }
 
 /// Convenience alias used throughout the crate.
