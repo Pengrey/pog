@@ -63,26 +63,9 @@ fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
             let db = pog.open_db()?;
             let findings = db.all_findings()?;
             let assets = db.all_assets()?;
+            let graph_data = build_graph_data(&findings);
 
-            let graph_data = if findings.is_empty() {
-                GraphData::sample_severity()
-            } else {
-                build_graph_data(&findings)
-            };
-
-            let display_findings = if findings.is_empty() {
-                models::Finding::sample_findings()
-            } else {
-                findings
-            };
-
-            let display_assets = if assets.is_empty() {
-                models::Asset::sample_assets()
-            } else {
-                assets
-            };
-
-            tui::run_with_data(graph_data, display_findings, display_assets)?;
+            tui::run_with_data(graph_data, findings, assets)?;
         }
 
         Commands::Report { output, template, asset, from, to } => {

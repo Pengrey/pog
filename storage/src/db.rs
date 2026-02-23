@@ -292,12 +292,19 @@ impl Database {
     // Destructive operations
     // ------------------------------------------------------------------
 
-    /// Delete all findings, images, and assets from the database.
+    /// Drop and recreate all tables, fully resetting the database.
     pub fn clean(&self) -> Result<u64> {
-        self.conn.execute("DELETE FROM finding_images", [])?;
-        self.conn.execute("DELETE FROM assets", [])?;
-        let deleted = self.conn.execute("DELETE FROM findings", [])?;
-        Ok(deleted as u64)
+        let count: u64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM findings", [], |r| r.get(0),
+        ).unwrap_or(0);
+        self.conn.execute_batch(
+            "DROP TABLE IF EXISTS finding_images;
+             DROP TABLE IF EXISTS assets;
+             DROP TABLE IF EXISTS findings;
+             VACUUM;"
+        )?;
+        self.migrate()?;
+        Ok(count)
     }
 
     // ------------------------------------------------------------------

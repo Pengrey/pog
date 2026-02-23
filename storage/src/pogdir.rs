@@ -162,18 +162,12 @@ impl PogDir {
         self.asset_dir(asset).join(format!("{hex_id}_{slug}"))
     }
 
-    /// Remove the database file and the entire `findings/` directory,
-    /// then recreate the empty structure.
+    /// Wipe the entire client directory and recreate the empty structure.
     pub fn clean(&self) -> Result<()> {
-        let db_path = self.db_path();
-        if db_path.exists() {
-            fs::remove_file(&db_path)?;
+        if self.root.exists() {
+            fs::remove_dir_all(&self.root)?;
         }
-        let findings = self.findings_dir();
-        if findings.exists() {
-            fs::remove_dir_all(&findings)?;
-        }
-        fs::create_dir_all(&findings)?;
+        fs::create_dir_all(self.root.join("findings"))?;
         Ok(())
     }
 

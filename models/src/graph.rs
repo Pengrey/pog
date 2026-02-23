@@ -42,14 +42,4 @@ impl GraphData {
         self.bars = bars;
         self
     }
-
-    /// Sample graph data for demonstration / testing purposes.
-    pub fn sample_severity() -> Self {
-        Self::new("Severity Distribution")
-            .with_bar(SeverityBar::from_severity(Severity::Critical, 3))
-            .with_bar(SeverityBar::from_severity(Severity::High, 7))
-            .with_bar(SeverityBar::from_severity(Severity::Medium, 12))
-            .with_bar(SeverityBar::from_severity(Severity::Low, 5))
-            .with_bar(SeverityBar::from_severity(Severity::Info, 2))
-    }
 }

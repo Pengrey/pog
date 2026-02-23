@@ -59,34 +59,4 @@ impl Asset {
             _ => Color::Gray,
         }
     }
-
-    /// Sample assets for demonstration / testing purposes.
-    pub fn sample_assets() -> Vec<Asset> {
-        vec![
-            Asset {
-                id: Some(1),
-                name: "nexus_portal".into(),
-                description: "Customer-facing web portal for Nexus Corp".into(),
-                contact: "Platform Team <platform@nexus.corp>".into(),
-                criticality: "Critical".into(),
-                dns_or_ip: "portal.nexus.corp".into(),
-            },
-            Asset {
-                id: Some(2),
-                name: "orion_gateway".into(),
-                description: "API gateway for Orion services".into(),
-                contact: "Infrastructure Team <infra@orion.corp>".into(),
-                criticality: "Critical".into(),
-                dns_or_ip: "gw.orion.corp".into(),
-            },
-            Asset {
-                id: Some(3),
-                name: "helix_mobile".into(),
-                description: "Mobile backend API for Helix app".into(),
-                contact: "Mobile Team <mobile@helix.corp>".into(),
-                criticality: "High".into(),
-                dns_or_ip: "mobile-api.helix.corp".into(),
-            },
-        ]
-    }
 }

@@ -20,11 +20,6 @@ use std::io::{self, stdout};
 
 use app::App;
 
-/// Launch the TUI with sample/default data.
-pub fn run() -> io::Result<()> {
-    run_with_data(GraphData::sample_severity(), Finding::sample_findings(), Asset::sample_assets())
-}
-
 /// Launch the TUI with the provided data.
 pub fn run_with_data(graph_data: GraphData, findings: Vec<Finding>, assets: Vec<Asset>) -> io::Result<()> {
     enable_raw_mode()?;
