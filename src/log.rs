@@ -18,7 +18,7 @@ macro_rules! success {
 #[macro_export]
 macro_rules! debug {
     ($($arg:tt)*) => {
-        println!("[{}] {}", "\x1b[33m>><\x1b[0m", format!($($arg)*))
+        eprintln!("[{}] {}", "\x1b[33m>><\x1b[0m", format!($($arg)*))
     };
 }
 
@@ -26,6 +26,6 @@ macro_rules! debug {
 #[macro_export]
 macro_rules! error {
     ($($arg:tt)*) => {
-        println!("[{}] {}", "\x1b[31m-\x1b[0m", format!($($arg)*))
+        eprintln!("[{}] {}", "\x1b[31m-\x1b[0m", format!($($arg)*))
     };
 }

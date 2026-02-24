@@ -46,10 +46,10 @@ pub fn generate_report(
     });
 
     env.add_template("report", &raw)
-        .map_err(|e| StorageError::ParseError(e.to_string()))?;
+        .map_err(|e| StorageError::TemplateError(e.to_string()))?;
     let tmpl = env
         .get_template("report")
-        .map_err(|e| StorageError::ParseError(e.to_string()))?;
+        .map_err(|e| StorageError::TemplateError(e.to_string()))?;
 
     let finding_values: Vec<minijinja::Value> = findings
         .iter()
@@ -101,7 +101,7 @@ pub fn generate_report(
 
     let rendered = tmpl
         .render(&ctx)
-        .map_err(|e| StorageError::ParseError(e.to_string()))?;
+        .map_err(|e| StorageError::TemplateError(e.to_string()))?;
 
     // ── parse blocks and render via LaTeX ──
     let blocks = parse_blocks(&rendered);
@@ -367,8 +367,29 @@ fn parse_blocks(text: &str) -> Vec<Block> {
 
         // ── pipe-delimited table row ──
         if trimmed.contains('|') && !trimmed.starts_with('-') {
+            // Strip leading/trailing empty cells produced by lines
+            // like `| A | B | C |` (the split yields ["", "A", "B", "C", ""]).
+            let mut cols: Vec<String> = trimmed.split('|').map(|c| c.trim().to_string()).collect();
+            if cols.first().map_or(false, |c| c.is_empty()) {
+                cols.remove(0);
+            }
+            if cols.last().map_or(false, |c| c.is_empty()) {
+                cols.pop();
+            }
+
+            // Skip markdown separator lines like `|---|---|---|`.
+            // Every cell consists solely of dashes and optional colons.
+            let is_separator = !cols.is_empty() && cols.iter().all(|c| {
+                !c.is_empty() && c.chars().all(|ch| ch == '-' || ch == ':')
+            });
+            if is_separator {
+                if table_rows.is_empty() {
+                    flush_text(&mut text_buf, &mut blocks);
+                }
+                continue;
+            }
+
             flush_text(&mut text_buf, &mut blocks);
-            let cols: Vec<String> = trimmed.split('|').map(|c| c.trim().to_string()).collect();
             table_rows.push(cols);
             continue;
         }
@@ -681,6 +702,36 @@ fn latex_escape(text: &str) -> String {
             '}' => out.push_str(r"\}"),
             '~' => out.push_str(r"\textasciitilde{}"),
             '^' => out.push_str(r"\textasciicircum{}"),
+            // Unicode dashes
+            '\u{2013}' => out.push_str("--"),          // en-dash –
+            '\u{2014}' => out.push_str("---"),         // em-dash —
+            // Unicode quotes
+            '\u{2018}' => out.push_str("`"),            // left single quote ‘
+            '\u{2019}' => out.push_str("'"),            // right single quote ’
+            '\u{201C}' => out.push_str("``"),           // left double quote “
+            '\u{201D}' => out.push_str("''"),           // right double quote ”
+            // Currency & symbols
+            '\u{20AC}' => out.push_str("\\texteuro{}"),  // euro sign €
+            '\u{00A3}' => out.push_str("\\textsterling{}"), // pound sign
+            '\u{00A9}' => out.push_str("\\textcopyright{}"), // copyright
+            '\u{00AE}' => out.push_str("\\textregistered{}"), // registered
+            '\u{2122}' => out.push_str("\\texttrademark{}"), // trademark
+            '\u{00B0}' => out.push_str("\\textdegree{}"), // degree
+            // Math operators
+            '\u{00D7}' => out.push_str("$\\times$"),    // multiplication sign ×
+            '\u{00F7}' => out.push_str("$\\div$"),      // division sign
+            '\u{2264}' => out.push_str("$\\leq$"),      // less-than or equal
+            '\u{2265}' => out.push_str("$\\geq$"),      // greater-than or equal
+            '\u{2248}' => out.push_str("$\\approx$"),   // approximately
+            '\u{2260}' => out.push_str("$\\neq$"),      // not equal
+            // Arrows
+            '\u{2192}' => out.push_str("$\\rightarrow$"), // right arrow
+            '\u{2190}' => out.push_str("$\\leftarrow$"),  // left arrow
+            // Misc
+            '\u{2022}' => out.push_str("\\textbullet{}"), // bullet
+            '\u{2026}' => out.push_str("\\ldots{}"),     // ellipsis
+            '\u{00AB}' => out.push_str("\\guillemotleft{}"), // «
+            '\u{00BB}' => out.push_str("\\guillemotright{}"), // »
             _ => out.push(ch),
         }
     }
@@ -885,6 +936,8 @@ fn blocks_to_latex(blocks: &[Block], asset: &str) -> String {
                     }
                     s
                 };
+                // Increase row height for better readability
+                body.push_str("{\\renewcommand{\\arraystretch}{1.35}\n");
                 body.push_str(&format!(
                     "\\noindent\n\\begin{{tabularx}}{{\\textwidth}}{{{}}}\n\\toprule\n",
                     col_spec.trim(),
@@ -897,14 +950,17 @@ fn blocks_to_latex(blocks: &[Block], asset: &str) -> String {
                     body.push_str(&cells.join(" & "));
                     body.push_str(" \\\\\n\\midrule\n");
                 }
-                // data rows
-                for row in rows.iter().skip(1) {
+                // data rows (with alternating background)
+                for (idx, row) in rows.iter().skip(1).enumerate() {
+                    if idx % 2 == 1 {
+                        body.push_str("\\rowcolor{CodeBg}\n");
+                    }
                     let cells: Vec<String> =
                         row.iter().map(|c| latex_escape(c)).collect();
                     body.push_str(&cells.join(" & "));
                     body.push_str(" \\\\\n");
                 }
-                body.push_str("\\bottomrule\n\\end{tabularx}\n\\vspace{4mm}\n\n");
+                body.push_str("\\bottomrule\n\\end{tabularx}\n}\n\\vspace{4mm}\n\n");
             }
             Block::Latex(raw) => {
                 after_section = false;
@@ -947,6 +1003,7 @@ fn latex_preamble(asset: &str) -> String {
 \usepackage[top=25mm,bottom=30mm,left=25mm,right=25mm]{geometry}
 
 % ── encoding & fonts ──
+\usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage[scaled=0.92]{helvet}
 \usepackage{courier}
@@ -964,6 +1021,7 @@ fn latex_preamble(asset: &str) -> String {
 \usepackage{graphicx}
 \usepackage{etoolbox}
 \usepackage{colortbl}
+\usepackage{textcomp}
 
 % ── corporate colours ──
 \definecolor{CorpDark}{HTML}{1E293B}
@@ -1079,15 +1137,15 @@ fn render_pdf(latex_src: &str, output_path: &str, work_dir: &Path) -> Result<()>
     let mut status = NoopStatusBackend::default();
 
     let config = PersistentConfig::open(false).map_err(|e| {
-        StorageError::ParseError(format!("tectonic configuration error: {e}"))
+        StorageError::PdfError(format!("tectonic configuration error: {e}"))
     })?;
 
     let bundle = config.default_bundle(false, &mut status).map_err(|e| {
-        StorageError::ParseError(format!("tectonic bundle error: {e}"))
+        StorageError::PdfError(format!("tectonic bundle error: {e}"))
     })?;
 
     let format_cache_path = config.format_cache_path().map_err(|e| {
-        StorageError::ParseError(format!("tectonic format cache error: {e}"))
+        StorageError::PdfError(format!("tectonic format cache error: {e}"))
     })?;
 
     let mut sb = ProcessingSessionBuilder::default();
@@ -1104,17 +1162,17 @@ fn render_pdf(latex_src: &str, output_path: &str, work_dir: &Path) -> Result<()>
         .do_not_write_output_files();
 
     let mut sess = sb.create(&mut status).map_err(|e| {
-        StorageError::ParseError(format!("tectonic LaTeX compilation failed: {e}"))
+        StorageError::PdfError(format!("tectonic LaTeX compilation failed: {e}"))
     })?;
 
     sess.run(&mut status).map_err(|e| {
-        StorageError::ParseError(format!("tectonic LaTeX compilation failed: {e}"))
+        StorageError::PdfError(format!("tectonic LaTeX compilation failed: {e}"))
     })?;
 
     let mut files = sess.into_file_data();
     let pdf_data = files
         .remove("texput.pdf")
-        .ok_or_else(|| StorageError::ParseError("tectonic: no PDF output produced".into()))?
+        .ok_or_else(|| StorageError::PdfError("tectonic: no PDF output produced".into()))?
         .data;
 
     // Ensure output directory exists
@@ -1206,6 +1264,18 @@ mod tests {
         assert_eq!(latex_escape("~"), r"\textasciitilde{}");
         assert_eq!(latex_escape("^"), r"\textasciicircum{}");
         assert_eq!(latex_escape(r"\"), r"\textbackslash{}");
+    }
+
+    #[test]
+    fn latex_escape_unicode_chars() {
+        // Dashes
+        assert_eq!(latex_escape("\u{2013}"), "--");  // en-dash
+        assert_eq!(latex_escape("\u{2014}"), "---"); // em-dash
+        // Euro and multiplication (the two characters causing rendering bugs)
+        assert_eq!(latex_escape("29.99\u{20AC}"), r"29.99\texteuro{}");
+        assert_eq!(latex_escape("1.5\u{00D7}"), r"1.5$\times$");
+        // Quotes
+        assert_eq!(latex_escape("\u{201C}hello\u{201D}"), "``hello''");
     }
 
     // ── severity colour ──
@@ -1350,6 +1420,35 @@ Some text here.
         assert_eq!(blocks.len(), 2);
         assert!(matches!(&blocks[0], Block::Table(_)));
         assert_eq!(blocks[1], Block::Text("Some paragraph after table.".into()));
+    }
+
+    #[test]
+    fn parse_blocks_table_pipe_delimited_markdown() {
+        // Markdown-style pipe tables with leading/trailing pipes and separator.
+        let input = "| A | B | C |\n|---|---|---|\n| 1 | 2 | 3 |\n| x | y | z |";
+        let blocks = parse_blocks(input);
+        assert_eq!(
+            blocks,
+            vec![Block::Table(vec![
+                vec!["A".into(), "B".into(), "C".into()],
+                vec!["1".into(), "2".into(), "3".into()],
+                vec!["x".into(), "y".into(), "z".into()],
+            ])]
+        );
+    }
+
+    #[test]
+    fn parse_blocks_table_separator_only_skipped() {
+        // Separator with colons (alignment markers) should also be skipped.
+        let input = "| A | B |\n|:---|---:|\n| 1 | 2 |";
+        let blocks = parse_blocks(input);
+        assert_eq!(
+            blocks,
+            vec![Block::Table(vec![
+                vec!["A".into(), "B".into()],
+                vec!["1".into(), "2".into()],
+            ])]
+        );
     }
 
     // ── parse_inline_spans ──

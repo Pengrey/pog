@@ -1,7 +1,7 @@
 use ratatui::style::Color;
 
 /// Workflow status for a security finding.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub enum Status {
     Open,
     InProgress,

@@ -132,21 +132,53 @@ fn parse_finding_md(raw: &str, slug: &str) -> Result<Finding> {
     let mut status = Status::Open;
     let mut description = String::new();
     let mut in_description = false;
+    let mut found_title = false;
+    let mut in_code_block = false;
 
     for line in raw.lines() {
         let trimmed = line.trim();
 
-        // Title: first `# …` heading
-        if !in_description && trimmed.starts_with("# ") && !trimmed.starts_with("## ") {
+        // Track fenced code blocks (``` or ~~~) so that lines inside them
+        // are never interpreted as markdown headings or metadata.
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_code_block = !in_code_block;
+            // If we're accumulating the description, keep the fence line.
+            if in_description {
+                if !description.is_empty() {
+                    description.push('\n');
+                }
+                description.push_str(line);
+            }
+            continue;
+        }
+
+        // Inside a fenced code block, skip all structural parsing.
+        if in_code_block {
+            if in_description {
+                if !description.is_empty() {
+                    description.push('\n');
+                }
+                description.push_str(line);
+            }
+            continue;
+        }
+
+        // Title: first `# …` heading (only capture once)
+        if !found_title && !in_description && trimmed.starts_with("# ") && !trimmed.starts_with("## ") {
             title = trimmed.trim_start_matches('#').trim().to_string();
+            found_title = true;
             continue;
         }
 
         // Section heading for description
         if trimmed.starts_with("## ") {
-            let heading = trimmed.trim_start_matches('#').trim().to_lowercase();
-            in_description = heading == "description";
-            continue;
+            if !in_description {
+                let heading = trimmed.trim_start_matches('#').trim().to_lowercase();
+                in_description = heading == "description";
+                continue;
+            }
+            // Already inside description — fall through so the heading
+            // is accumulated as part of the description content.
         }
 
         // Metadata bullet points
@@ -272,6 +304,7 @@ pub fn import_asset(file: &Path, pog: &PogDir) -> Result<Asset> {
 pub fn import_assets_bulk(file: &Path, pog: &PogDir) -> Result<Vec<Asset>> {
     let raw = fs::read_to_string(file)?;
     let mut assets = Vec::new();
+    let db = pog.open_db()?;
 
     // Split on `---` lines
     let sections: Vec<&str> = raw.split("\n---").collect();
@@ -282,7 +315,6 @@ pub fn import_assets_bulk(file: &Path, pog: &PogDir) -> Result<Vec<Asset>> {
             continue;
         }
         let asset = parse_asset_md(trimmed)?;
-        let db = pog.open_db()?;
         let id = db.upsert_asset(&asset)?;
         write_asset_md(&asset, pog)?;
         assets.push(Asset { id: Some(id), ..asset });

@@ -533,10 +533,14 @@ impl SearchTab {
             ]));
             f.render_widget(location, chunks[6]);
 
-            let description = Paragraph::new(Line::from(vec![
-                Span::styled("Description:\n", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(&finding.description),
-            ]))
+            let mut desc_lines: Vec<Line> = vec![
+                Line::from(Span::styled("Description:", Style::default().add_modifier(Modifier::BOLD))),
+                Line::from(""),
+            ];
+            for l in finding.description.lines() {
+                desc_lines.push(Line::from(l.to_string()));
+            }
+            let description = Paragraph::new(desc_lines)
             .wrap(Wrap { trim: true });
             f.render_widget(description, chunks[8]);
         } else {

@@ -1,7 +1,11 @@
 use ratatui::style::Color;
 
 /// Severity level for a security finding.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+///
+/// Variants are ordered from most to least severe, so `Critical < High < …`
+/// follows the derive order.  This makes sorting findings by severity
+/// straightforward.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub enum Severity {
     Critical,
     High,

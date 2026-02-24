@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::process;
 
 #[macro_use]
 mod log;
@@ -11,7 +10,7 @@ use storage::PogDir;
 fn main() {
     if let Err(e) = run() {
         error!("{e}");
-        process::exit(1);
+        std::process::exit(1);
     }
 }
 
@@ -77,8 +76,7 @@ fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
             )?;
 
             if findings.is_empty() {
-                error!("No findings match the given filters");
-                process::exit(1);
+                return Err("No findings match the given filters".into());
             }
 
             info!(
@@ -101,7 +99,7 @@ fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
         Commands::UpdateStatus { asset, id, status } => {
             let parsed: models::Status = status.parse()
-                .map_err(|e: String| e)?;
+                .map_err(|e: String| -> Box<dyn std::error::Error> { e.into() })?;
             let db = pog.open_db()?;
             let title = db.update_finding_status(&asset, &id, parsed.as_str())?;
             success!("{} [{}] ({}) → {}", title, id, asset, parsed);

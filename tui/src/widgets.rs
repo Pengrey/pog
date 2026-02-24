@@ -49,9 +49,15 @@ pub struct SearchBox {
     pub area: Option<Rect>,
 }
 
+impl Default for SearchBox {
+    fn default() -> Self {
+        Self { input: String::new(), focused: false, area: None }
+    }
+}
+
 impl SearchBox {
     pub fn new() -> Self {
-        Self { input: String::new(), focused: false, area: None }
+        Self::default()
     }
 
     /// Render the search box into `area`, saving the area for later hit-testing.
@@ -104,9 +110,15 @@ pub struct Dropdown {
     pub menu_area: Option<Rect>,
 }
 
+impl Default for Dropdown {
+    fn default() -> Self {
+        Self { open: false, selected: 0, button_area: None, menu_area: None }
+    }
+}
+
 impl Dropdown {
     pub fn new() -> Self {
-        Self { open: false, selected: 0, button_area: None, menu_area: None }
+        Self::default()
     }
 
     pub fn toggle(&mut self, current_index: usize) {

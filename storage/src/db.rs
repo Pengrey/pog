@@ -15,6 +15,7 @@ impl Database {
     pub fn open(path: impl Into<PathBuf>) -> Result<Self> {
         let conn = Connection::open(path.into())?;
         let db = Self { conn };
+        db.set_pragmas()?;
         db.migrate()?;
         Ok(db)
     }
@@ -23,8 +24,19 @@ impl Database {
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
         let db = Self { conn };
+        db.set_pragmas()?;
         db.migrate()?;
         Ok(db)
+    }
+
+    /// Set SQLite pragmas for data integrity and performance.
+    fn set_pragmas(&self) -> Result<()> {
+        self.conn.execute_batch(
+            "PRAGMA journal_mode = WAL;
+             PRAGMA synchronous = NORMAL;
+             PRAGMA foreign_keys = ON;"
+        )?;
+        Ok(())
     }
 
     // ------------------------------------------------------------------
@@ -183,7 +195,7 @@ impl Database {
             param_values.iter().map(|v| v as &dyn rusqlite::types::ToSql).collect();
 
         let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map(params.as_slice(), |row| Ok(FindingRow::from_row(row)))?;
+        let rows = stmt.query_map(params.as_slice(), |row| FindingRow::from_row(row))?;
 
         let mut findings = Vec::new();
         for row in rows {
@@ -296,7 +308,7 @@ impl Database {
     pub fn clean(&self) -> Result<u64> {
         let count: u64 = self.conn.query_row(
             "SELECT COUNT(*) FROM findings", [], |r| r.get(0),
-        ).unwrap_or(0);
+        )?;
         self.conn.execute_batch(
             "DROP TABLE IF EXISTS finding_images;
              DROP TABLE IF EXISTS assets;
@@ -410,19 +422,19 @@ struct FindingRow {
 }
 
 impl FindingRow {
-    fn from_row(row: &rusqlite::Row) -> Self {
-        Self {
-            id: row.get(0).unwrap_or_default(),
-            hex_id: row.get(1).unwrap_or_default(),
-            title: row.get(2).unwrap_or_default(),
-            severity: row.get(3).unwrap_or_default(),
-            asset: row.get(4).unwrap_or_default(),
-            date: row.get(5).unwrap_or_default(),
-            location: row.get(6).unwrap_or_default(),
-            description: row.get(7).unwrap_or_default(),
-            status: row.get(8).unwrap_or_default(),
-            slug: row.get(9).unwrap_or_default(),
-        }
+    fn from_row(row: &rusqlite::Row) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get(0)?,
+            hex_id: row.get(1)?,
+            title: row.get(2)?,
+            severity: row.get(3)?,
+            asset: row.get(4)?,
+            date: row.get(5)?,
+            location: row.get(6)?,
+            description: row.get(7)?,
+            status: row.get(8)?,
+            slug: row.get(9)?,
+        })
     }
 
     fn into_finding(self, images: Vec<String>) -> Finding {

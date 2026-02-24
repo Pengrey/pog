@@ -22,6 +22,16 @@ use app::App;
 
 /// Launch the TUI with the provided data.
 pub fn run_with_data(graph_data: GraphData, findings: Vec<Finding>, assets: Vec<Asset>) -> io::Result<()> {
+    // Install a panic hook that restores the terminal before printing
+    // the panic message. Without this, a panic leaves the terminal in
+    // raw mode, making it unusable.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stderr(), LeaveAlternateScreen, DisableMouseCapture);
+        default_hook(info);
+    }));
+
     enable_raw_mode()?;
     let mut stdout = stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;

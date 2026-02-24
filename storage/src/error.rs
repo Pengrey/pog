@@ -15,6 +15,12 @@ pub enum StorageError {
     #[error("failed to parse finding markdown: {0}")]
     ParseError(String),
 
+    #[error("template rendering error: {0}")]
+    TemplateError(String),
+
+    #[error("PDF compilation error: {0}")]
+    PdfError(String),
+
     #[error("POGDIR is not set and could not be determined")]
     NoPogDir,
 

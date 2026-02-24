@@ -49,11 +49,17 @@ fn severity_index(s: Severity) -> usize {
     Severity::ALL.iter().position(|&v| v == s).unwrap_or(0)
 }
 
-/// Parse "YYYY/MM/DD" → (year, month, day).
+/// Parse "YYYY/MM/DD" → (year, month, day), returning `None` for invalid dates.
 fn parse_ymd(date: &str) -> Option<(i32, u32, u32)> {
     let parts: Vec<&str> = date.split('/').collect();
     if parts.len() < 3 { return None; }
-    Some((parts[0].parse().ok()?, parts[1].parse().ok()?, parts[2].parse().ok()?))
+    let y: i32 = parts[0].parse().ok()?;
+    let m: u32 = parts[1].parse().ok()?;
+    let d: u32 = parts[2].parse().ok()?;
+    if !(1..=12).contains(&m) || d == 0 || d > 31 {
+        return None;
+    }
+    Some((y, m, d))
 }
 
 /// Convert (year, month, day) → ordinal day count since an arbitrary epoch
@@ -393,9 +399,11 @@ impl GraphTab {
             .style(Style::default().fg(Color::Blue))
             .data(&data_points);
 
+        let x_max = if n <= 1 { 1.0 } else { (n - 1) as f64 };
+
         let x_axis = Axis::default()
             .style(Style::default().fg(Color::DarkGray))
-            .bounds([0.0, (n - 1) as f64])
+            .bounds([0.0, x_max])
             .labels(x_labels);
 
         let y_axis = Axis::default()
