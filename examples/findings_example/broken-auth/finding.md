@@ -1,12 +1,11 @@
-# Broken Authentication on Admin Panel
-
-- **Severity:** Critical
-- **Asset:** Orion Gateway
-- **Date:** 2025/11/06
-- **Location:** https://api.example.com/admin
-- **Status:** InProgress
-
-## Description
+---
+title: Broken Authentication on Admin Panel
+severity: Critical
+asset: Orion Gateway
+date: 2025/11/06
+location: https://api.example.com/admin
+status: InProgress
+---
 
 The `/admin` endpoint relies solely on a predictable session token
 generated from `md5(username + timestamp)`. No rate-limiting or account

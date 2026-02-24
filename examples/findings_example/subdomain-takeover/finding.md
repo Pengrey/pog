@@ -1,12 +1,11 @@
-# Subdomain Takeover
-
-- **Severity:** Medium
-- **Asset:** Orion Gateway
-- **Date:** 2026/02/12
-- **Location:** https://staging.orion.corp
-- **Status:** Open
-
-## Description
+---
+title: Subdomain Takeover
+severity: Medium
+asset: Orion Gateway
+date: 2026/02/12
+location: https://staging.orion.corp
+status: Open
+---
 
 The DNS CNAME record for `staging.orion.corp` points to
 `orion-staging.herokuapp.com`, which is no longer provisioned. An attacker

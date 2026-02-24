@@ -1,12 +1,11 @@
-# Internal API SSRF
-
-- **Severity:** High
-- **Asset:** Helix Mobile
-- **Date:** 2025/11/05
-- **Location:** https://mobile-api.helix.corp/api/fetch
-- **Status:** False Positive
-
-## Description
+---
+title: Internal API SSRF
+severity: High
+asset: Helix Mobile
+date: 2025/11/05
+location: https://mobile-api.helix.corp/api/fetch
+status: False Positive
+---
 
 The scanner reported a Server-Side Request Forgery (SSRF) vulnerability in
 the `/api/fetch` endpoint, claiming that user-supplied URLs are fetched

@@ -1,12 +1,11 @@
-# Clickjacking on Dashboard
-
-- **Severity:** Medium
-- **Asset:** Helix Mobile
-- **Date:** 2025/10/27
-- **Location:** https://mobile-api.helix.corp/dashboard
-- **Status:** Open
-
-## Description
+---
+title: Clickjacking on Dashboard
+severity: Medium
+asset: Helix Mobile
+date: 2025/10/27
+location: https://mobile-api.helix.corp/dashboard
+status: Open
+---
 
 The dashboard page does not set `X-Frame-Options` or a
 `Content-Security-Policy` `frame-ancestors` directive, allowing the page

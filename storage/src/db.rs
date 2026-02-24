@@ -54,7 +54,7 @@ impl Database {
                 asset       TEXT    NOT NULL DEFAULT 'unknown',
                 date        TEXT    NOT NULL DEFAULT '',
                 location    TEXT    NOT NULL DEFAULT '',
-                description TEXT    NOT NULL DEFAULT '',
+                report_content TEXT    NOT NULL DEFAULT '',
                 status      TEXT    NOT NULL DEFAULT 'Open',
                 slug        TEXT    NOT NULL UNIQUE
             );
@@ -99,7 +99,7 @@ impl Database {
     /// Insert a finding. Returns the new row id.
     pub fn insert_finding(&self, finding: &Finding, slug: &str, hex_id: &str) -> Result<i64> {
         self.conn.execute(
-            "INSERT INTO findings (hex_id, title, severity, asset, date, location, description, status, slug)
+            "INSERT INTO findings (hex_id, title, severity, asset, date, location, report_content, status, slug)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 hex_id,
@@ -108,7 +108,7 @@ impl Database {
                 finding.asset,
                 finding.date,
                 finding.location,
-                finding.description,
+                finding.report_content,
                 finding.status.as_str(),
                 slug,
             ],
@@ -139,14 +139,14 @@ impl Database {
         if let Some((id, hex_id)) = existing {
             self.conn.execute(
                 "UPDATE findings SET title = ?1, severity = ?2, asset = ?3, date = ?4,
-                 location = ?5, description = ?6, status = ?7 WHERE id = ?8",
+                 location = ?5, report_content = ?6, status = ?7 WHERE id = ?8",
                 params![
                     finding.title,
                     finding.severity.as_str(),
                     finding.asset,
                     finding.date,
                     finding.location,
-                    finding.description,
+                    finding.report_content,
                     finding.status.as_str(),
                     id,
                 ],
@@ -186,7 +186,7 @@ impl Database {
         let (where_clause, param_values) = build_where_clause(asset, from, to);
 
         let sql = format!(
-            "SELECT id, hex_id, title, severity, asset, date, location, description, status, slug \
+            "SELECT id, hex_id, title, severity, asset, date, location, report_content, status, slug \
              FROM findings{} ORDER BY asset, hex_id",
             where_clause
         );
@@ -334,11 +334,11 @@ impl Database {
     ) -> Result<String> {
         let findings = self.findings_filtered(asset, from, to)?;
 
-        let mut out = String::from("hex_id,title,severity,asset,date,location,status,description\n");
+        let mut out = String::from("hex_id,title,severity,asset,date,location,status,report_content\n");
         for f in &findings {
             let fields = [
                 &f.hex_id, &f.title, f.severity.as_str(), &f.asset,
-                &f.date, &f.location, f.status.as_str(), &f.description,
+                &f.date, &f.location, f.status.as_str(), &f.report_content,
             ];
             let line: Vec<String> = fields.iter().map(|v| csv_field(v)).collect();
             out.push_str(&line.join(","));
@@ -416,7 +416,7 @@ struct FindingRow {
     asset: String,
     date: String,
     location: String,
-    description: String,
+    report_content: String,
     status: String,
     slug: String,
 }
@@ -431,7 +431,7 @@ impl FindingRow {
             asset: row.get(4)?,
             date: row.get(5)?,
             location: row.get(6)?,
-            description: row.get(7)?,
+            report_content: row.get(7)?,
             status: row.get(8)?,
             slug: row.get(9)?,
         })
@@ -449,7 +449,7 @@ impl FindingRow {
             asset: self.asset,
             date: self.date,
             location: self.location,
-            description: self.description,
+            report_content: self.report_content,
             status,
             images,
         }

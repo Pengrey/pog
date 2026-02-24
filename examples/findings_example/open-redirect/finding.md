@@ -1,12 +1,11 @@
-# Open Redirect
-
-- **Severity:** Medium
-- **Asset:** Nexus Portal
-- **Date:** 2025/09/03
-- **Location:** https://example.com/login?next=https://evil.com
-- **Status:** Open
-
-## Description
+---
+title: Open Redirect
+severity: Medium
+asset: Nexus Portal
+date: 2025/09/03
+location: https://example.com/login?next=https://evil.com
+status: Open
+---
 
 The `next` query parameter on the login page is used in a `302` redirect
 after successful authentication without validating that the target URL

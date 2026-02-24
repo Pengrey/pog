@@ -1,12 +1,11 @@
-# TLS Certificate Mismatch
-
-- **Severity:** Low
-- **Asset:** Orion Gateway
-- **Date:** 2025/09/18
-- **Location:** https://gw.orion.corp
-- **Status:** False Positive
-
-## Description
+---
+title: TLS Certificate Mismatch
+severity: Low
+asset: Orion Gateway
+date: 2025/09/18
+location: https://gw.orion.corp
+status: False Positive
+---
 
 The automated scanner flagged a TLS certificate mismatch between the
 Common Name (CN) in the certificate and the hostname being tested. Upon

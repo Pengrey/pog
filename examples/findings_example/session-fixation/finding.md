@@ -1,12 +1,11 @@
-# Session Fixation
-
-- **Severity:** High
-- **Asset:** Helix Mobile
-- **Date:** 2025/05/07
-- **Location:** https://mobile-api.helix.corp/login
-- **Status:** Resolved
-
-## Description
+---
+title: Session Fixation
+severity: High
+asset: Helix Mobile
+date: 2025/05/07
+location: https://mobile-api.helix.corp/login
+status: Resolved
+---
 
 The session token issued before authentication is reused after a
 successful login without regeneration. An attacker who knows or sets

@@ -241,7 +241,7 @@ impl SearchTab {
             .filter(|item| {
                 let matches_search = query.is_empty()
                     || item.title.to_lowercase().contains(&query)
-                    || item.description.to_lowercase().contains(&query)
+                    || item.report_content.to_lowercase().contains(&query)
                     || item.location.to_lowercase().contains(&query);
                 let matches_severity = self.severity_filter.matches(item.severity);
                 let matches_asset = self.asset_filter.matches(&item.asset);
@@ -487,7 +487,7 @@ impl SearchTab {
                     Constraint::Length(2), // status
                     Constraint::Length(2), // location
                     Constraint::Length(1), // spacer
-                    Constraint::Min(0),   // description
+                    Constraint::Min(0),   // report content
                 ])
                 .split(inner);
 
@@ -534,15 +534,15 @@ impl SearchTab {
             f.render_widget(location, chunks[6]);
 
             let mut desc_lines: Vec<Line> = vec![
-                Line::from(Span::styled("Description:", Style::default().add_modifier(Modifier::BOLD))),
+                Line::from(Span::styled("Report Content:", Style::default().add_modifier(Modifier::BOLD))),
                 Line::from(""),
             ];
-            for l in finding.description.lines() {
+            for l in finding.report_content.lines() {
                 desc_lines.push(Line::from(l.to_string()));
             }
-            let description = Paragraph::new(desc_lines)
+            let report_content = Paragraph::new(desc_lines)
             .wrap(Wrap { trim: true });
-            f.render_widget(description, chunks[8]);
+            f.render_widget(report_content, chunks[8]);
         } else {
             let empty = Paragraph::new("No finding selected")
                 .block(block)

@@ -1,12 +1,11 @@
-# IDOR on User Profiles
-
-- **Severity:** High
-- **Asset:** Helix Mobile
-- **Date:** 2025/12/08
-- **Location:** https://mobile-api.example.com/v2/users/1337/profile
-- **Status:** Open
-
-## Description
+---
+title: IDOR on User Profiles
+severity: High
+asset: Helix Mobile
+date: 2025/12/08
+location: https://mobile-api.example.com/v2/users/1337/profile
+status: Open
+---
 
 Authenticated users can access any other user's profile by changing the
 numeric user ID in the URL path. The server does not verify that the

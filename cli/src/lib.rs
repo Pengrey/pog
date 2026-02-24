@@ -43,7 +43,7 @@ pub enum Commands {
 
     /// Generate a PDF report from findings
     Report {
-        /// Report template file (.tmpl)
+        /// Report template file (.typ)
         #[arg(short, long)]
         template: String,
 

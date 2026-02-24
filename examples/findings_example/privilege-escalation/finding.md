@@ -1,12 +1,11 @@
-# Privilege Escalation via Role Parameter
-
-- **Severity:** High
-- **Asset:** Orion Gateway
-- **Date:** 2025/11/12
-- **Location:** https://gw.orion.corp/api/role
-- **Status:** InProgress
-
-## Description
+---
+title: Privilege Escalation via Role Parameter
+severity: High
+asset: Orion Gateway
+date: 2025/11/12
+location: https://gw.orion.corp/api/role
+status: InProgress
+---
 
 The `PUT /api/role` endpoint accepts a `role` field in the JSON body and
 applies it without verifying that the requesting user has administrative

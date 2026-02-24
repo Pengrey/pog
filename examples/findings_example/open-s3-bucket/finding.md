@@ -1,12 +1,11 @@
-# Open S3 Bucket
-
-- **Severity:** Critical
-- **Asset:** Nexus Portal
-- **Date:** 2025/08/15
-- **Location:** https://s3.amazonaws.com/nexus-uploads
-- **Status:** Resolved
-
-## Description
+---
+title: Open S3 Bucket
+severity: Critical
+asset: Nexus Portal
+date: 2025/08/15
+location: https://s3.amazonaws.com/nexus-uploads
+status: Resolved
+---
 
 The `nexus-uploads` S3 bucket has a public ACL granting `s3:GetObject`
 and `s3:PutObject` to `AllUsers`. Any unauthenticated user can list,

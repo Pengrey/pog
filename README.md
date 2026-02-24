@@ -19,7 +19,7 @@ Findings and assets are plain **Markdown files**. Use `pog` to import, search an
 | **Asset management** | Track assets with metadata: name, description, contact, criticality, DNS/IP. |
 | **Asset-based organisation** | Findings grouped by target asset with unique hex IDs. |
 | **Interactive TUI** | Tabbed dashboard (Graph, Search, Assets) with keyboard & mouse. |
-| **PDF reports** | Self-contained template-driven PDF reports via embedded [tectonic](https://tectonic-typesetting.github.io/) engine – no external LaTeX install needed. Templates own their styling, images and layout; the program fills in findings and metadata. |
+| **PDF reports** | Self-contained template-driven PDF reports via [Typst](https://typst.app/). Templates own their styling, images and layout; the program fills in findings and metadata. |
 | **CSV export** | One-command export of all findings. |
 | **Bulk import** | Batch-import findings or assets in one go. |
 | **Multi-client** | Each client gets its own isolated DB and findings directory. Switch with `--client` or set a default. |
@@ -32,9 +32,8 @@ Findings and assets are plain **Markdown files**. Use `pog` to import, search an
 ## Quick start
 
 ```bash
-# Build (Podman container)
-make pod-build    # first time only
-make release      # compile & strip
+# Build
+cargo build --release
 
 # Client management
 pog client create acme-corp
@@ -56,7 +55,7 @@ pog view
 
 # Export & report
 pog export -o findings.csv -a nexus_portal --from 2025/09/01 --to 2026/01/31
-pog report -t template.tmpl --asset nexus_portal --from 2025/09/01 --to 2026/01/31
+pog report -t template.typ --asset nexus_portal --from 2025/09/01 --to 2026/01/31
 
 # Wipe current client's data
 pog clean
@@ -205,57 +204,40 @@ pog export --from 2025/09/01 --to 2026/01/31                       # date range 
 
 ### `pog report`
 
-Generate a PDF report from findings using a [MiniJinja](https://docs.rs/minijinja) template and the [tectonic](https://tectonic-typesetting.github.io) embedded TeX engine (no external LaTeX installation required).
+Generate a PDF report from findings using a [Typst](https://typst.app/) template. No external installation is required — the Typst compiler is embedded in the binary.
 
-Templates are **self-contained** – they own their styling, cover-page images and layout. Place assets (images, logos, etc.) alongside the template file and reference them via raw LaTeX. The entire template directory is copied into the build context so all relative paths resolve correctly.
+Templates are **self-contained** – they own their styling, cover-page images and layout. Place assets (images, logos, etc.) alongside the template file. The entire template directory is copied into the build context so all relative paths resolve correctly.
 
 ```
-pog report -t template.tmpl --asset nexus_portal --from 2025/09/01 --to 2026/01/31
+pog report -t template.typ --asset nexus_portal --from 2025/09/01 --to 2026/01/31
 ```
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-t` | Template file (`.tmpl`) | *(required)* |
+| `-t` | Template file (`.typ`) | *(required)* |
 | `-o` | Output PDF path | `report.pdf` |
 | `--asset` | Asset name | *(required)* |
 | `--from` | Start date (`YYYY/MM/DD`) | *(required)* |
 | `--to` | End date (`YYYY/MM/DD`) | *(required)* |
 
-#### Template directives
+#### Template inputs
 
-| Directive | Description |
-|-----------|-------------|
-| `#! title <text>` | Large title with accent bar |
-| `#! subtitle <text>` | Smaller gray subtitle |
-| `#! section <text>` | Section heading |
-| `#! finding <severity> <text>` | Finding card (auto page-break) |
-| `#! meta <key>: <value>` | Key–value line |
-| `#! table` | Table from `\|`-delimited lines |
-| `#! index` | Auto-generated TOC with page numbers & bookmarks |
-| `#! spacer <mm>` | Vertical spacing |
-| `#! pagebreak` | Page break |
-| `#! hr` | Horizontal rule |
-| `#! comment <text>` | Template-only note (not rendered in PDF) |
-| `#! latex <raw>` | Raw LaTeX passthrough (single-line) |
-| `#! latex` … `#! endlatex` | Multi-line raw LaTeX block |
+The following variables are injected into the template via `sys.inputs`:
 
-Plain text between directives is rendered as Markdown-aware paragraphs supporting **bold**, *italic*, `inline code`, `` ```fenced code blocks``` ``, `[link text](url)`, `![images](path)`, `# headings` and `- bullet lists`.
+| Variable | Type | Description |
+|----------|------|-------------|
+| `findings` | array of dicts | Each dict has: `num`, `title`, `severity`, `asset`, `date`, `location`, `report-content`, `status`, `images` |
+| `date` | string | Report generation date (`YYYY/MM/DD`) |
+| `asset` | string | Asset name |
+| `from` / `to` | string | Assessment date range |
+| `total` | int | Total finding count |
+| `critical`, `high`, `medium`, `low`, `info` | int | Per-severity counts |
 
-#### Template filters
-
-| Filter | Usage | Description |
-|--------|-------|-------------|
-| `latex` | `{{ var\|latex }}` | Escapes LaTeX special characters (`_`, `&`, `%`, `$`, `#`, `{`, `}`, `~`, `^`, `\`) |
-
-Use the `latex` filter for any variable inside `#! latex` blocks. Variables in plain text blocks are escaped automatically.
-
-**Template variables:** `findings`, `date`, `asset`, `from`, `to`, `total`, `critical`, `high`, `medium`, `low`, `info`.
-
-**Page header / footer:** every page (except the cover) shows *"Security Assessment Report – {asset}"* in the header with a page number on the right. The footer is empty.
+Finding `report-content` is automatically converted from Markdown to Typst markup. Use `eval(f.at("report-content"), mode: "markup")` in templates to render it.
 
 **Example templates:**
 
-- [`examples/report_template_example/template.tmpl`](examples/report_template_example/template.tmpl) – minimal working template
+- [`examples/report_template_example/template.typ`](examples/report_template_example/template.typ) – minimal working template
 
 #### Template directory structure
 
@@ -263,10 +245,10 @@ Place images and other assets alongside the template file:
 
 ```
 my_template/
-├── template.tmpl        # the template
+├── template.typ         # the template
 └── img/
-    ├── banner.png       # referenced via \includegraphics{img/banner.png}
-    └── logo.png         # referenced via \includegraphics{img/logo.png}
+    ├── banner.png       # referenced via image("img/banner.png")
+    └── logo.png         # referenced via image("img/logo.png")
 ```
 
 ### `pog update-status`
@@ -312,28 +294,27 @@ sql-injection/
 **Markdown template:**
 
 ```markdown
-# SQL Injection
-
-- **Severity:** Critical
-- **Asset:** nexus_portal
-- **Location:** https://portal.nexus.corp/api/users?id=1
-- **Status:** Open
-- **Date:** 2026/01/15
-
-## Description
+---
+title: SQL Injection
+severity: Critical
+asset: nexus_portal
+location: https://portal.nexus.corp/api/users?id=1
+status: Open
+date: 2026/01/15
+---
 
 User input is directly concatenated into the SQL query without sanitisation.
 ```
 
 | Field | Required | Default | Values |
 |-------|----------|---------|--------|
-| `# Title` | yes | folder name | — |
-| `Severity` | no | `Info` | `Critical`, `High`, `Medium`, `Low`, `Info` |
-| `Asset` | no | `unknown` | lowercase, underscores for spaces |
-| `Location` | no | *(empty)* | URL, path, etc. |
-| `Status` | no | `Open` | `Open`, `InProgress`, `Resolved`, `FalsePositive` |
-| `Date` | no | *(empty)* | `YYYY/MM/DD` |
-| `Description` | no | *(empty)* | Everything under `## Description` |
+| `title` | no | folder name | — |
+| `severity` | no | `Info` | `Critical`, `High`, `Medium`, `Low`, `Info` |
+| `asset` | no | `unknown` | lowercase, underscores for spaces |
+| `location` | no | *(empty)* | URL, path, etc. |
+| `status` | no | `Open` | `Open`, `InProgress`, `Resolved`, `FalsePositive` |
+| `date` | no | *(empty)* | `YYYY/MM/DD` |
+| Report content | no | *(empty)* | Everything after the closing `---` fence |
 
 ---
 
@@ -433,19 +414,14 @@ grep -rl "SQL" ~/.pog/clients/acme-corp/findings/    # keyword search
 
 ## Building
 
-Builds run inside a **Podman container** for reproducibility.
+Requires a Rust toolchain (edition 2024).
 
 ```bash
-make pod-build    # build container (first time)
-make release      # compile & strip
-make test         # run tests
-make debug        # debug build
-make clean        # clean artifacts
+cargo build --release      # compile
+cargo test --workspace     # run tests
 ```
 
-Requires [Podman](https://podman.io). No local Rust toolchain needed.
-
-The container uses **Rust 1.89** (Debian Bookworm) and builds static libraries for graphite2 and harfbuzz (required by the tectonic PDF engine). The project uses Rust **edition 2024**.
+The release binary is at `target/release/pog`.
 
 ### Project structure
 
@@ -454,11 +430,9 @@ pog/                          (Rust 2024 edition)
 ├── src/          # binary entry point
 ├── cli/          # CLI parsing (clap)
 ├── models/       # domain types – Finding, Asset, Severity, Status, GraphData
-├── storage/      # POGDIR layout, SQLite (rusqlite), import, CSV export & PDF report (tectonic + MiniJinja)
+├── storage/      # POGDIR layout, SQLite (rusqlite), import, CSV export & PDF report (Typst)
 ├── tui/          # ratatui + crossterm TUI (tabs: Graph, Search, Assets)
 ├── examples/     # sample findings, assets & report template
-├── Dockerfile    # Podman build container (Rust 1.89 / Debian bookworm)
-├── Makefile      # build targets
 └── Cargo.toml    # workspace root
 ```
 

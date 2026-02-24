@@ -16,7 +16,7 @@ pub struct Finding {
     /// Date the finding was recorded, in `YYYY/MM/DD` format.
     pub date: String,
     pub location: String,
-    pub description: String,
+    pub report_content: String,
     pub status: Status,
     /// Relative paths to images inside the POGDIR finding directory.
     pub images: Vec<String>,
@@ -29,7 +29,7 @@ impl Finding {
         asset: impl Into<String>,
         date: impl Into<String>,
         location: impl Into<String>,
-        description: impl Into<String>,
+        report_content: impl Into<String>,
         status: Status,
     ) -> Self {
         let title = title.into();
@@ -43,7 +43,7 @@ impl Finding {
             asset: asset.into(),
             date: date.into(),
             location: location.into(),
-            description: description.into(),
+            report_content: report_content.into(),
             status,
             images: Vec::new(),
         }

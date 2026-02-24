@@ -1,12 +1,11 @@
-# XML External Entity Injection
-
-- **Severity:** High
-- **Asset:** Orion Gateway
-- **Date:** 2025/10/09
-- **Location:** https://gw.orion.corp/import
-- **Status:** Open
-
-## Description
+---
+title: XML External Entity Injection
+severity: High
+asset: Orion Gateway
+date: 2025/10/09
+location: https://gw.orion.corp/import
+status: Open
+---
 
 The XML import endpoint parses uploaded XML documents using a default
 parser configuration that resolves external entities. Submitting a

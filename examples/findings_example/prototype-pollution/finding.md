@@ -1,12 +1,11 @@
-# Prototype Pollution
-
-- **Severity:** High
-- **Asset:** Helix Mobile
-- **Date:** 2025/08/04
-- **Location:** https://mobile-api.helix.corp/api/merge
-- **Status:** Open
-
-## Description
+---
+title: Prototype Pollution
+severity: High
+asset: Helix Mobile
+date: 2025/08/04
+location: https://mobile-api.helix.corp/api/merge
+status: Open
+---
 
 The `/api/merge` endpoint performs a recursive deep merge of user-supplied
 JSON into server-side objects. Sending `{"__proto__": {"isAdmin": true}}`

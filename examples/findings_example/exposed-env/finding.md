@@ -1,12 +1,11 @@
-# Exposed .env File
-
-- **Severity:** High
-- **Asset:** Nexus Portal
-- **Date:** 2025/07/08
-- **Location:** https://portal.nexus.corp/.env
-- **Status:** Resolved
-
-## Description
+---
+title: Exposed .env File
+severity: High
+asset: Nexus Portal
+date: 2025/07/08
+location: https://portal.nexus.corp/.env
+status: Resolved
+---
 
 The `.env` file is served by the web server and contains database
 connection strings, API keys, and SMTP credentials in plaintext.

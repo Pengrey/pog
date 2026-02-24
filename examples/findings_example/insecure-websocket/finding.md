@@ -1,12 +1,11 @@
-# Insecure WebSocket Origin
-
-- **Severity:** Medium
-- **Asset:** Helix Mobile
-- **Date:** 2025/09/26
-- **Location:** https://mobile-api.helix.corp/ws
-- **Status:** Open
-
-## Description
+---
+title: Insecure WebSocket Origin
+severity: Medium
+asset: Helix Mobile
+date: 2025/09/26
+location: https://mobile-api.helix.corp/ws
+status: Open
+---
 
 The WebSocket endpoint at `/ws` accepts upgrade requests from any
 `Origin` header. A malicious page can open a WebSocket connection to

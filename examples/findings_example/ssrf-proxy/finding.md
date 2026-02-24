@@ -1,12 +1,11 @@
-# Server-Side Request Forgery
-
-- **Severity:** High
-- **Asset:** Nexus Portal
-- **Date:** 2025/12/14
-- **Location:** https://portal.nexus.corp/proxy
-- **Status:** InProgress
-
-## Description
+---
+title: Server-Side Request Forgery
+severity: High
+asset: Nexus Portal
+date: 2025/12/14
+location: https://portal.nexus.corp/proxy
+status: InProgress
+---
 
 The `/proxy` endpoint fetches a user-supplied URL and returns the response
 body. No allowlist or blocklist is enforced, enabling requests to internal

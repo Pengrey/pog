@@ -1,12 +1,11 @@
-# Insecure CORS Policy
-
-- **Severity:** Medium
-- **Asset:** Helix Mobile
-- **Date:** 2025/11/22
-- **Location:** https://mobile-api.helix.corp/api/data
-- **Status:** Open
-
-## Description
+---
+title: Insecure CORS Policy
+severity: Medium
+asset: Helix Mobile
+date: 2025/11/22
+location: https://mobile-api.helix.corp/api/data
+status: Open
+---
 
 The API responds with `Access-Control-Allow-Origin: *` and
 `Access-Control-Allow-Credentials: true` on authenticated endpoints.

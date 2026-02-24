@@ -7,8 +7,9 @@ edition = "2024"
 models = { path = "../models" }
 rusqlite = { version = "0.35", features = ["bundled"] }
 thiserror = "2"
-minijinja = "2"
-tectonic = { version = "0.15", features = ["external-harfbuzz"] }
+typst-as-lib = { version = "0.15", features = ["typst-kit-fonts", "typst-kit-embed-fonts"] }
+typst-pdf = "0.14"
+typst = "0.14"
 tempfile = "3"
 
 [dev-dependencies]

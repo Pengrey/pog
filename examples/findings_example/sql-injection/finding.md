@@ -1,12 +1,11 @@
-# SQL Injection
-
-- **Severity:** Critical
-- **Asset:** Nexus Portal
-- **Date:** 2025/10/02
-- **Location:** https://example.com/api/users?id=1
-- **Status:** Open
-
-## Description
+---
+title: SQL Injection
+severity: Critical
+asset: Nexus Portal
+date: 2025/10/02
+location: https://example.com/api/users?id=1
+status: Open
+---
 
 The `id` parameter in the `/api/users` endpoint is directly concatenated
 into a raw SQL query without any parameterisation or input sanitisation.

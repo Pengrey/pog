@@ -9,7 +9,8 @@ use crate::pogdir::PogDir;
 /// Import a single finding from a folder.
 ///
 /// The folder is expected to contain:
-/// - Exactly one `.md` file (the finding write-up)
+/// - Exactly one `.md` file with YAML front-matter between `---` fences
+///   followed by the markdown report content
 /// - Optionally an `img/` subdirectory with screenshots / proof images
 ///
 /// The folder name is used as the finding's *slug* (unique identifier).
@@ -106,19 +107,20 @@ fn find_markdown(dir: &Path) -> Result<std::path::PathBuf> {
 
 /// Parse a finding markdown file.
 ///
-/// Expected front-matter format (lines at the top of the file):
+/// Expected format: YAML front-matter between `---` fences followed by
+/// the free-form markdown report content.
 ///
 /// ```markdown
-/// # Title of Finding
+/// ---
+/// title: SQL Injection
+/// severity: Critical
+/// asset: web_app
+/// location: https://example.com/api/users?id=1
+/// date: 2025/10/02
+/// status: Open
+/// ---
 ///
-/// - **Severity:** Critical
-/// - **Asset:** web_app
-/// - **Location:** https://example.com/vuln
-/// - **Status:** Open
-///
-/// ## Description
-///
-/// Free-form description text…
+/// The `id` parameter is directly concatenated into a raw SQL query …
 /// ```
 ///
 /// Parsing is intentionally lenient: missing fields get sensible defaults.
@@ -130,83 +132,54 @@ fn parse_finding_md(raw: &str, slug: &str) -> Result<Finding> {
     let mut date = String::new();
     let mut location = String::new();
     let mut status = Status::Open;
-    let mut description = String::new();
-    let mut in_description = false;
-    let mut found_title = false;
-    let mut in_code_block = false;
+    let report_content;
 
-    for line in raw.lines() {
-        let trimmed = line.trim();
+    // ── split on front-matter fences ──
+    let trimmed = raw.trim_start();
+    if trimmed.starts_with("---") {
+        // Find the closing `---`
+        let after_open = &trimmed[3..];
+        // Skip the rest of the opening line (e.g. trailing whitespace)
+        let after_open = after_open.trim_start_matches(|c: char| c != '\n');
+        let after_open = after_open.strip_prefix('\n').unwrap_or(after_open);
 
-        // Track fenced code blocks (``` or ~~~) so that lines inside them
-        // are never interpreted as markdown headings or metadata.
-        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
-            in_code_block = !in_code_block;
-            // If we're accumulating the description, keep the fence line.
-            if in_description {
-                if !description.is_empty() {
-                    description.push('\n');
+        if let Some(close) = after_open.find("\n---") {
+            let front = &after_open[..close];
+            let body = &after_open[close + 4..]; // skip "\n---"
+            // Skip the rest of the closing `---` line
+            let body = body.trim_start_matches(|c: char| c != '\n');
+            let body = body.strip_prefix('\n').unwrap_or(body);
+
+            // ── parse front-matter key: value lines ──
+            for line in front.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
                 }
-                description.push_str(line);
-            }
-            continue;
-        }
-
-        // Inside a fenced code block, skip all structural parsing.
-        if in_code_block {
-            if in_description {
-                if !description.is_empty() {
-                    description.push('\n');
+                if let Some((key, value)) = line.split_once(':') {
+                    let key = key.trim().to_lowercase();
+                    let value = value.trim().to_string();
+                    match key.as_str() {
+                        "title" => title = value,
+                        "severity" => severity = value.parse().unwrap_or(Severity::Info),
+                        "asset" => asset = normalise_asset(&value),
+                        "date" => date = value,
+                        "location" => location = value,
+                        "status" => status = value.parse().unwrap_or(Status::Open),
+                        _ => {} // ignore unknown keys
+                    }
                 }
-                description.push_str(line);
             }
-            continue;
-        }
 
-        // Title: first `# …` heading (only capture once)
-        if !found_title && !in_description && trimmed.starts_with("# ") && !trimmed.starts_with("## ") {
-            title = trimmed.trim_start_matches('#').trim().to_string();
-            found_title = true;
-            continue;
+            report_content = body.trim().to_string();
+        } else {
+            // Opening `---` but no closing fence — treat everything as report content
+            report_content = raw.trim().to_string();
         }
-
-        // Section heading for description
-        if trimmed.starts_with("## ") {
-            if !in_description {
-                let heading = trimmed.trim_start_matches('#').trim().to_lowercase();
-                in_description = heading == "description";
-                continue;
-            }
-            // Already inside description — fall through so the heading
-            // is accumulated as part of the description content.
-        }
-
-        // Metadata bullet points
-        if !in_description {
-            if let Some(value) = extract_field(trimmed, "severity") {
-                severity = value.parse().unwrap_or(Severity::Info);
-            } else if let Some(value) = extract_field(trimmed, "asset") {
-                asset = normalise_asset(&value);
-            } else if let Some(value) = extract_field(trimmed, "date") {
-                date = value;
-            } else if let Some(value) = extract_field(trimmed, "location") {
-                location = value;
-            } else if let Some(value) = extract_field(trimmed, "status") {
-                status = value.parse().unwrap_or(Status::Open);
-            }
-            continue;
-        }
-
-        // Accumulate description lines
-        if in_description {
-            if !description.is_empty() {
-                description.push('\n');
-            }
-            description.push_str(line);
-        }
+    } else {
+        // No front-matter at all — whole file is report content
+        report_content = raw.trim().to_string();
     }
-
-    let description = description.trim().to_string();
 
     Ok(Finding {
         id: None,
@@ -217,7 +190,7 @@ fn parse_finding_md(raw: &str, slug: &str) -> Result<Finding> {
         asset,
         date,
         location,
-        description,
+        report_content,
         status,
         images: Vec::new(),
     })
@@ -395,15 +368,14 @@ mod tests {
 
     fn sample_md() -> &'static str {
         "\
-# SQL Injection
-
-- **Severity:** Critical
-- **Asset:** Web App
-- **Date:** 2026/01/15
-- **Location:** https://example.com/api/users?id=1
-- **Status:** Open
-
-## Description
+---
+title: SQL Injection
+severity: Critical
+asset: Web App
+date: 2026/01/15
+location: https://example.com/api/users?id=1
+status: Open
+---
 
 User input is directly concatenated into SQL query without sanitization.
 This allows an attacker to execute arbitrary SQL commands.
@@ -428,18 +400,27 @@ This allows an attacker to execute arbitrary SQL commands.
         assert_eq!(f.date, "2026/01/15");
         assert_eq!(f.location, "https://example.com/api/users?id=1");
         assert_eq!(f.status, Status::Open);
-        assert!(f.description.contains("User input is directly concatenated"));
+        assert!(f.report_content.contains("User input is directly concatenated"));
     }
 
     #[test]
     fn test_parse_minimal_md() {
-        let md = "# Buffer Overflow\n\n## Description\n\nStack smash.\n";
+        let md = "---\ntitle: Buffer Overflow\n---\n\nStack smash.\n";
         let f = parse_finding_md(md, "buffer-overflow").unwrap();
         assert_eq!(f.title, "Buffer Overflow");
         assert_eq!(f.severity, Severity::Info); // default
         assert_eq!(f.asset, "unknown");         // default
         assert_eq!(f.date, "");                 // default
         assert_eq!(f.status, Status::Open);     // default
+        assert!(f.report_content.contains("Stack smash"));
+    }
+
+    #[test]
+    fn test_parse_no_frontmatter() {
+        let md = "Just a raw description.\n";
+        let f = parse_finding_md(md, "raw-finding").unwrap();
+        assert_eq!(f.title, "raw-finding"); // slug used as fallback
+        assert!(f.report_content.contains("Just a raw description"));
     }
 
     #[test]
@@ -485,9 +466,9 @@ This allows an attacker to execute arbitrary SQL commands.
         let pog = PogDir::init_at(pog_dir.path()).unwrap();
 
         create_finding_folder(&tmp, "finding-a",
-            "# Finding A\n\n- **Severity:** High\n- **Asset:** web_app\n- **Date:** 2026/01/15\n\n## Description\n\nDesc A\n");
+            "---\ntitle: Finding A\nseverity: High\nasset: web_app\ndate: 2026/01/15\n---\n\nDesc A\n");
         create_finding_folder(&tmp, "finding-b",
-            "# Finding B\n\n- **Severity:** Low\n- **Asset:** web_app\n- **Date:** 2026/01/16\n\n## Description\n\nDesc B\n");
+            "---\ntitle: Finding B\nseverity: Low\nasset: web_app\ndate: 2026/01/16\n---\n\nDesc B\n");
 
         let findings = import_bulk(tmp.path(), &pog).unwrap();
         assert_eq!(findings.len(), 2);
@@ -514,7 +495,7 @@ This allows an attacker to execute arbitrary SQL commands.
 
         // Update the markdown and re-import
         fs::write(folder.join("finding.md"),
-            "# SQL Injection v2\n\n- **Severity:** Critical\n- **Asset:** Web App\n- **Date:** 2026/01/20\n- **Status:** Resolved\n\n## Description\n\nFixed.\n"
+            "---\ntitle: SQL Injection v2\nseverity: Critical\nasset: Web App\ndate: 2026/01/20\nstatus: Resolved\n---\n\nFixed.\n"
         ).unwrap();
         let f = import_finding(&folder, &pog).unwrap();
         assert_eq!(f.title, "SQL Injection v2");
@@ -542,25 +523,14 @@ This allows an attacker to execute arbitrary SQL commands.
 
     #[test]
     fn test_extract_field() {
+        // extract_field is still used for asset markdown parsing
         assert_eq!(
-            extract_field("- **Severity:** Critical", "severity"),
-            Some("Critical".into())
+            extract_field("- **Description:** some desc", "description"),
+            Some("some desc".into())
         );
         assert_eq!(
-            extract_field("- Severity: High", "severity"),
-            Some("High".into())
-        );
-        assert_eq!(
-            extract_field("- **Location:** https://example.com", "location"),
-            Some("https://example.com".into())
-        );
-        assert_eq!(
-            extract_field("- **Asset:** Web App", "asset"),
-            Some("Web App".into())
-        );
-        assert_eq!(
-            extract_field("- **Date:** 2026/01/15", "date"),
-            Some("2026/01/15".into())
+            extract_field("- **Contact:** admin@corp.com", "contact"),
+            Some("admin@corp.com".into())
         );
         assert_eq!(extract_field("random line", "severity"), None);
     }

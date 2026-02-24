@@ -1,12 +1,11 @@
-# Weak TLS Configuration
-
-- **Severity:** Low
-- **Asset:** Orion Gateway
-- **Date:** 2025/09/18
-- **Location:** https://api.example.com
-- **Status:** Open
-
-## Description
+---
+title: Weak TLS Configuration
+severity: Low
+asset: Orion Gateway
+date: 2025/09/18
+location: https://api.example.com
+status: Open
+---
 
 The server still supports TLS 1.0 and TLS 1.1, both of which are
 considered deprecated (RFC 8996). Additionally, the following weak cipher

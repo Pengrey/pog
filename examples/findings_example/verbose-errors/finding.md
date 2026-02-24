@@ -1,12 +1,11 @@
-# Verbose Error Messages
-
-- **Severity:** Info
-- **Asset:** Nexus Portal
-- **Date:** 2025/09/10
-- **Location:** https://example.com/api/search?q=%27
-- **Status:** Open
-
-## Description
+---
+title: Verbose Error Messages
+severity: Info
+asset: Nexus Portal
+date: 2025/09/10
+location: https://example.com/api/search?q=%27
+status: Open
+---
 
 Sending a single quote `'` in the `q` parameter causes the application to
 return a full stack trace including internal file paths, framework version

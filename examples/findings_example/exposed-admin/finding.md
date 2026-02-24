@@ -1,12 +1,11 @@
-# Exposed Admin Panel
-
-- **Severity:** High
-- **Asset:** Nexus Portal
-- **Date:** 2025/03/05
-- **Location:** https://portal.nexus.corp/admin
-- **Status:** Resolved
-
-## Description
+---
+title: Exposed Admin Panel
+severity: High
+asset: Nexus Portal
+date: 2025/03/05
+location: https://portal.nexus.corp/admin
+status: Resolved
+---
 
 The admin panel is reachable on the public IP without requiring a VPN
 connection. While password-protected, the login form itself should not
